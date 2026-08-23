@@ -308,7 +308,7 @@ Press `Ctrl/Cmd + K`. Type to filter. It offers:
 4. Optionally add a **Title** (up to 120 characters) — for example `Research assistant`. This is a
    human label shown next to the name.
 5. Write a **Description** (up to 8000 characters). This is the most important field — see below.
-6. Choose a **Model tier**: `sonnet` (default) or `opus`.
+6. Choose a **Model tier**: `fable`, `opus`, `sonnet` (default) or `haiku`.
 7. Click **Create bot**.
 
 The Bot appears in the sidebar and its thread opens.
@@ -326,9 +326,26 @@ Put standing constraints in the description; put the task in the message.
 
 #### Model tiers
 
-`sonnet` is the default and right for nearly all work. `opus` is for Bots doing genuinely harder
-reasoning. There is no per-message model picker by design — routing is fixed per Bot so behaviour
-stays predictable. The auto-reviewer and the group-message router always use `haiku` regardless.
+Four tiers, most to least capable:
+
+| Tier | Use it for |
+| --- | --- |
+| `fable` | The most demanding reasoning and long-horizon autonomous work. Slowest and priciest. |
+| `opus` | Genuinely harder reasoning — the step up from the default. |
+| `sonnet` | The default, and right for nearly all work. |
+| `haiku` | Cheap, fast, shallow. Good for a Bot that triages, watches, or summarises. |
+
+These are `claude` CLI model aliases, so a tier always resolves to the current model in that
+family — they do not pin a version.
+
+There is no per-message model picker by design: routing is fixed per Bot so behaviour stays
+predictable. The auto-reviewer and the group-message router always use `haiku` regardless of any
+Bot's tier.
+
+> **Tier availability follows your Claude subscription.** ant-bot spawns the `claude` CLI and
+> bills to your existing login, so a Bot can only use a tier your plan includes. If a turn fails
+> immediately after switching tiers, that is the likely cause — check with `claude --model fable`
+> in a terminal.
 
 ### Bot settings
 

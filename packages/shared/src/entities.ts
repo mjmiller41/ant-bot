@@ -13,7 +13,15 @@ export type BotState = z.infer<typeof BotStateSchema>;
 export const AttentionSchema = z.enum(['none', 'unread', 'needs_attention']);
 export type Attention = z.infer<typeof AttentionSchema>;
 
-export const ModelTierSchema = z.enum(['sonnet', 'opus', 'haiku']);
+/**
+ * Model tiers a Bot can run on, ordered most to least capable — this is also the order the UI
+ * renders them in, so both pickers stay consistent without repeating the list.
+ *
+ * Each value is a `claude` CLI model alias, passed through verbatim by `resolveModel()`. Adding a
+ * tier here means adding an alias the CLI accepts (`claude --model`), not an API model ID.
+ */
+export const MODEL_TIERS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+export const ModelTierSchema = z.enum(MODEL_TIERS);
 export type ModelTier = z.infer<typeof ModelTierSchema>;
 
 export const BotSchema = z.object({

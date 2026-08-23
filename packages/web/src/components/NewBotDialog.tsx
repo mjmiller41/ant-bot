@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CreateBotRequest, ModelTier } from '@antbot/shared';
+import { MODEL_TIERS, type CreateBotRequest, type ModelTier } from '@antbot/shared';
 import { EMOJI_CHOICES } from './emoji.js';
 
 export interface NewBotDialogProps {
@@ -76,7 +76,7 @@ export function NewBotDialog({ onCreate, onClose, busy, error }: NewBotDialogPro
           <div>
             <span className="mb-1 block text-xs text-(--color-text-muted)">Model tier</span>
             <div className="inline-flex rounded border border-(--color-border) p-0.5">
-              {(['sonnet', 'opus'] as const).map((tier) => (
+              {MODEL_TIERS.map((tier) => (
                 <button
                   key={tier}
                   type="button"

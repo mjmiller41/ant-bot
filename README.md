@@ -229,11 +229,11 @@ Current totals, as run against this checkout:
 
 | Package | Test files | Tests |
 |---|---|---|
-| `@antbot/shared` | 1 | 19 |
+| `@antbot/shared` | 1 | 22 |
 | `@antbot/server` | 19 | 450 |
-| `@antbot/web` | 7 | 49 |
-| `@antbot/cli` | 7 | 114 |
-| **Total** | **34** | **632** |
+| `@antbot/web` | 7 | 52 |
+| `@antbot/cli` | 7 | 116 |
+| **Total** | **34** | **640** |
 
 ## Status / not built
 

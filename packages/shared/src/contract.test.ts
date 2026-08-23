@@ -6,6 +6,7 @@ import {
   CreateBotRequest, CreateThreadRequest, PostMessageRequest, ApprovalDecisionRequest,
   CreateRuleRequest, CreateRoutineRequest, CreateSkillRequest,
   LIMITS, LIMIT_ERROR, LimitError,
+  MODEL_TIERS, ModelTierSchema,
 } from './index.js';
 
 describe('entity schemas round-trip', () => {
@@ -180,5 +181,25 @@ describe('limits', () => {
     expect(e).toBeInstanceOf(Error);
     expect(e.code).toBe('GROUP_SIZE');
     expect(e.name).toBe('LimitError');
+  });
+});
+
+describe('ModelTierSchema', () => {
+  it('offers fable, opus, sonnet and haiku, most capable first', () => {
+    expect(MODEL_TIERS).toEqual(['fable', 'opus', 'sonnet', 'haiku']);
+  });
+
+  // MODEL_TIERS is what both pickers render; the schema is what the API validates. If they
+  // diverge, the UI offers a tier the server rejects.
+  it('validates exactly the tiers the UI offers', () => {
+    expect(ModelTierSchema.options).toEqual([...MODEL_TIERS]);
+    for (const tier of MODEL_TIERS) expect(ModelTierSchema.parse(tier)).toBe(tier);
+  });
+
+  it('rejects anything that is not a CLI model alias', () => {
+    expect(ModelTierSchema.safeParse('gpt-4').success).toBe(false);
+    // A full model ID is not a tier: resolveModel passes the tier straight to `claude --model`,
+    // and the schema is what keeps an API-shaped string out of that position.
+    expect(ModelTierSchema.safeParse('claude-fable-5').success).toBe(false);
   });
 });

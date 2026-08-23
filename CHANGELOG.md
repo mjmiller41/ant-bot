@@ -4,6 +4,14 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`fable` and `haiku` model tiers for Bots.** `haiku` was already valid in the schema but no
+  picker offered it; `fable` is new. Both pickers now render the shared `MODEL_TIERS` list, so the
+  UI cannot offer a tier the API rejects, or hide one it accepts.
+
 ## [0.1.0] — 2026-08-23
 
 First published release: `npm i -g @michael-joseph-miller/ant-bot`.

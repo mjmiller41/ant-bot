@@ -40,7 +40,11 @@ export interface TurnRequest {
   enabledSkills?: string[];
 }
 
-/** `sonnet`/`opus`/`haiku` are CLI model aliases; keep routing fixed per surface. */
+/**
+ * MODEL_TIERS are `claude` CLI model aliases (`claude --model fable|opus|sonnet|haiku`), so the
+ * tier passes straight through. Routing stays fixed per surface: a Bot's tier is chosen once in
+ * its settings, never per message, and auto-review and the group router always use `haiku`.
+ */
 export function resolveModel(tier: ModelTier): string {
   return tier;
 }

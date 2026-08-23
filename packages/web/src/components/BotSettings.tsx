@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Bot, Skill } from '@antbot/shared';
+import { MODEL_TIERS, type Bot, type Skill } from '@antbot/shared';
 import { api, ApiError } from '../api/client.js';
 import { RoutinesPanel } from './RoutinesPanel.js';
 import { EMOJI_CHOICES } from './emoji.js';
@@ -91,7 +91,7 @@ function ProfileEditor({ bot, onUpdated }: { bot: Bot; onUpdated: (bot: Bot) => 
       <div>
         <span className="mb-1 block text-xs text-(--color-text-muted)">Model tier</span>
         <div className="inline-flex rounded border border-(--color-border) p-0.5">
-          {(['sonnet', 'opus'] as const).map((tier) => (
+          {MODEL_TIERS.map((tier) => (
             <button
               key={tier}
               type="button"

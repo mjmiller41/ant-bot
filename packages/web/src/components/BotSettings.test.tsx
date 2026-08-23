@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import type { Bot } from '@antbot/shared';
+import { MODEL_TIERS, type Bot } from '@antbot/shared';
 import { BotSettings } from './BotSettings.js';
 
 const listSkills = vi.fn();
@@ -142,5 +142,39 @@ describe('BotSettings — skill description disclosure', () => {
     const cb = screen.getByRole('checkbox', { name: /Deep Research/ });
     fireEvent.click(screen.getByText('Deep Research'));
     await waitFor(() => expect(cb).toBeChecked());
+  });
+});
+
+describe('BotSettings — model tier picker', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listSkills.mockResolvedValue([]);
+    listMemory.mockResolvedValue([]);
+    listRoutines.mockResolvedValue([]);
+  });
+
+  // The picker used to hardcode ['sonnet', 'opus'], so `haiku` was a valid tier in the schema
+  // that no user could ever pick. Both pickers now render MODEL_TIERS, and this fails if one
+  // of them drifts back to its own list.
+  it('offers every tier the contract defines', async () => {
+    render(<BotSettings bot={makeBot()} onClose={vi.fn()} onUpdated={vi.fn()} onDuplicated={vi.fn()} onDeleted={vi.fn()} />);
+    for (const tier of MODEL_TIERS) {
+      expect(await screen.findByRole('button', { name: tier })).toBeInTheDocument();
+    }
+  });
+
+  it('selects a tier when clicked', async () => {
+    render(<BotSettings bot={makeBot()} onClose={vi.fn()} onUpdated={vi.fn()} onDuplicated={vi.fn()} onDeleted={vi.fn()} />);
+    const fable = await screen.findByRole('button', { name: 'fable' });
+    fireEvent.click(fable);
+    await waitFor(() => expect(fable.className).toContain('bg-(--color-accent)'));
+  });
+
+  it('starts on the tier the bot already has', async () => {
+    render(
+      <BotSettings bot={makeBot({ modelTier: 'haiku' })} onClose={vi.fn()} onUpdated={vi.fn()} onDuplicated={vi.fn()} onDeleted={vi.fn()} />,
+    );
+    const haiku = await screen.findByRole('button', { name: 'haiku' });
+    expect(haiku.className).toContain('bg-(--color-accent)');
   });
 });
