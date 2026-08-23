@@ -1,5 +1,6 @@
 ---
 name: deep-research
+compatibility: Requires web search and fetch access. Parallel subagents and the Counter-Review Team are optional; without them the skill runs its documented degraded and manual-review paths.
 description: |
   Generate format-controlled research reports with evidence tracking, citations, source governance, and multi-pass synthesis.
   This skill should be used when users request a research report, literature review, market or industry analysis,
@@ -440,8 +441,11 @@ After completing research, suggest verification and output:
 Research report complete: [N] sources cited, [M] claims made.
 
 Options:
-A) Verify facts — run /fact-checker on the report (Recommended)
-B) Create slides — run /daymade-docs:ppt-creator from the findings
-C) Export as PDF — run /daymade-docs:pdf-creator for formal delivery
+A) Fact-check — re-verify every high-confidence claim against its cited source (Recommended)
+B) Summarize — condense the findings into a short brief or slide outline
+C) Deliver — write the report to the workspace in the format the user asked for
 D) No thanks — the report is ready as-is
 ```
+
+Offer only what this environment can actually do; drop any option whose tooling is unavailable
+rather than naming a command that does not exist here.

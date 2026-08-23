@@ -6,8 +6,19 @@ import {
 } from '@antbot/shared';
 import { routeGroupMessage, parseMentions } from '../bots/groups.js';
 
-export const SERVER_VERSION = '0.1.0';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readPackageVersion } from '../util/locate.js';
 import { readMemory, writeMemory, deleteMemory } from '../memory/memory.js';
+
+// Read from package.json rather than hardcoded, so a release bump cannot leave /api/health
+// claiming a version the CLI disagrees with.
+export const SERVER_VERSION = readPackageVersion(
+  path.dirname(fileURLToPath(import.meta.url)),
+  (p) => fs.existsSync(p),
+  (p) => fs.readFileSync(p, 'utf8'),
+);
 
 export function registerCoreRoutes(f: FastifyInstance, app: App): void {
   const { store, bus, manager } = app;

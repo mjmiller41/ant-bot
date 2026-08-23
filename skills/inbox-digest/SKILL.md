@@ -1,5 +1,5 @@
 ---
-name: "Inbox Digest"
+name: inbox-digest
 description: "Produces a since-last-time digest of what changed across the connected inbox/channels, filtered to what actually needs attention, with a proposed next step for each item."
 ---
 

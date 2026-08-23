@@ -49,17 +49,37 @@ Run `./antbot doctor` (see [Quickstart](#quickstart)) to check all of the above 
 
 ## Quickstart
 
+Two ways in. Install the package if you want to *use* ant-bot; clone the repo if you want to
+change it.
+
+### Install it (npm)
+
 ```bash
-pnpm install          # installs dependencies and builds every package
-./antbot doctor       # check Node, the claude CLI + login, data dir, port, native deps
-./antbot open         # start the daemon and open the UI
+npm i -g ant-bot      # or: pnpm add -g ant-bot
+antbot doctor         # check Node, the claude CLI + login, data dir, port, native deps
+antbot open           # start the daemon and open the UI
 ```
 
-That's it. `./antbot` is a launcher in the repo root — it rebuilds when sources change, so
-there's nothing to reinstall after a `git pull`.
+One package: the daemon, the CLI, the built web UI and the bundled skills. It needs Node 24+ and
+a logged-in `claude` CLI, and nothing else — no pnpm, no TypeScript toolchain, no build step.
+`antbot update` upgrades it later; `antbot status` and `antbot doctor` mention a new version when
+one exists, but nothing ever updates itself in the background.
 
-The UI is at **http://127.0.0.1:4780**, served by the daemon itself from the built
-`packages/web/dist`. There's no separate frontend server to run.
+### Work on it (clone)
+
+```bash
+git clone <this repo> && cd ant-bot
+pnpm install          # installs dependencies and builds every package
+./antbot doctor
+./antbot open
+```
+
+`./antbot` is a launcher in the repo root — it rebuilds when sources change, so there's nothing
+to reinstall after a `git pull`. `pnpm build:package` assembles the publishable package into
+`dist-npm/` if you want to see what ships.
+
+Either way the UI is at **http://127.0.0.1:4780**, served by the daemon itself from the built
+web assets. There's no separate frontend server to run.
 
 ### The commands you'll actually use
 
@@ -71,6 +91,7 @@ The UI is at **http://127.0.0.1:4780**, served by the daemon itself from the bui
 | `antbot restart` | Stop and start again |
 | `antbot status` | Whether it's running, on what port, with how many bots |
 | `antbot doctor` | Diagnose the environment; every failure prints its fix |
+| `antbot update` | Update to the latest published version (`--check` to look without installing) |
 
 Run `antbot --help` for the full list, or `antbot <command> --help` for one command.
 
@@ -189,7 +210,7 @@ Every command takes `--help`, e.g. `antbot start --help`.
 | `packages/server` | The daemon: Fastify API + WS (`src/api`), Bot lifecycle and queue (`src/bots`), Agent SDK wrapper (`src/agent`), Permission Gateway + rules + secrets (`src/permissions`), scheduler/cron (`src/scheduler`), skills store (`src/skills`), browser/computer service (`src/computer`), SQLite layer (`src/db`), config + paths (`src/config`) |
 | `packages/web` | React 19 + Vite UI: sidebar, thread view, approval cards, rules/settings/routines/usage screens, workspace browser, command palette |
 | `packages/cli` | The `antbot` CLI: start/stop/restart/status/doctor/open/skill/backup/restore |
-| `skills-examples/` | Three starter skills shipped and auto-seeded into a fresh `~/.ant-bot/skills`: `weekly-report`, `bug-repro`, `inbox-digest` |
+| `skills/` | The skills that ship with ant-bot — `bug-repro`, `deep-research`, `inbox-digest`, `skill-author`, `weekly-report` — plus `SPEC.md`, the Agent Skills spec they all conform to. Installed into `~/.ant-bot/skills` on every start and refreshed on upgrade unless you have edited or deleted your copy |
 | `computer/` | Placeholder for an optional containerized "computer" image — **not implemented** (see Status below) |
 | `docs/` | This plan, the design-doctrine outline it's translated from, and the frozen API contract |
 
@@ -209,10 +230,10 @@ Current totals, as run against this checkout:
 | Package | Test files | Tests |
 |---|---|---|
 | `@antbot/shared` | 1 | 19 |
-| `@antbot/server` | 14 | 315 |
-| `@antbot/web` | 7 | 45 |
-| `@antbot/cli` | 4 | 58 |
-| **Total** | **26** | **437** |
+| `@antbot/server` | 19 | 450 |
+| `@antbot/web` | 7 | 49 |
+| `@antbot/cli` | 7 | 114 |
+| **Total** | **34** | **632** |
 
 ## Status / not built
 

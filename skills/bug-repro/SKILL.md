@@ -1,5 +1,5 @@
 ---
-name: "Bug Reproduction"
+name: bug-repro
 description: "Turns a raw bug report into a reliable repro pack: exact steps, expected vs. actual, evidence, and a minimal test case, on a fresh test account in staging."
 ---
 

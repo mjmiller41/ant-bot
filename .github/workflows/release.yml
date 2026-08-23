@@ -1,0 +1,90 @@
+name: Release
+
+# Tag-triggered. The tag is the source of the published version: it must match the version in
+# package.json, which `pnpm test` already pins to every workspace package (version.test.ts).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Build and pack, but do not publish'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: publish ant-bot to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm-publish
+
+    permissions:
+      contents: read
+      # Required for npm provenance: the publish is signed with a Sigstore attestation
+      # tying the tarball to this workflow run and commit.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install and build
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for the live browser tests
+        run: pnpm --filter @antbot/server exec playwright install --with-deps chromium
+
+      # The same gate as ci.yml, and for the same reason: each check reports independently.
+      # A release must never publish something that would have failed CI.
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: pnpm lint
+
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: pnpm typecheck
+
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: pnpm test
+
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg"
+            exit 1
+          fi
+          echo "publishing $pkg"
+
+      - name: Assemble the package
+        run: pnpm build:package
+
+      # A dry run leaves the tarball as an artifact so the contents can be inspected before a
+      # real release — `files` mistakes are only visible in the packed output.
+      - name: Pack
+        run: npm pack ./dist-npm --pack-destination .
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ant-bot-tarball
+          path: '*.tgz'
+
+      - name: Publish
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && inputs.dry-run != true }}
+        run: npm publish ./dist-npm --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

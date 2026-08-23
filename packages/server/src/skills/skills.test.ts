@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { openDb } from '../db/db.js';
 import { Store } from '../db/store.js';
-import { SkillStore, MultipleSkillsError, parseFrontmatter, renderSkillFile, SKILL_TEMPLATE, seedExamples } from './skills.js';
+import { SkillStore, MultipleSkillsError, parseFrontmatter, renderSkillFile, SKILL_TEMPLATE } from './skills.js';
 
 describe('frontmatter round-trip', () => {
   it('renders and parses name/description/body', () => {
@@ -147,21 +147,74 @@ describe('SkillStore', () => {
       expect(SKILL_TEMPLATE).toContain(heading);
     }
   });
+});
 
-  it('seeds the bundled starter examples into an empty skills dir', () => {
-    seedExamples(dir);
-    for (const slug of ['weekly-report', 'bug-repro', 'inbox-digest']) {
-      expect(fs.existsSync(path.join(dir, slug, 'SKILL.md'))).toBe(true);
-      const raw = fs.readFileSync(path.join(dir, slug, 'SKILL.md'), 'utf8');
-      const { name } = parseFrontmatter(raw);
-      expect(name.length).toBeGreaterThan(0);
-    }
+describe('SkillStore.refreshFromDisk', () => {
+  let dir: string;
+  let store: Store;
+  let skills: SkillStore;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antbot-refresh-'));
+    store = new Store(openDb(':memory:'));
+    skills = new SkillStore(store, dir);
+  });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  function writeFile(slug: string, name: string, description: string): void {
+    fs.mkdirSync(path.join(dir, slug), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, slug, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: ${description}\n---\n\nbody\n`,
+    );
+  }
+
+  it('pulls a renamed skill back in line with its file', () => {
+    // The upgrade that renamed the bundled skills to spec-conformant slugs: the row still
+    // says "Weekly Report" while the file now says weekly-report, and the SDK is handed the row.
+    writeFile('weekly-report', 'Weekly Report', 'old');
+    skills.syncFromDisk();
+    writeFile('weekly-report', 'weekly-report', 'new');
+
+    expect(skills.refreshFromDisk(['weekly-report'])).toEqual(['weekly-report']);
+    const row = store.getSkillBySlug('weekly-report')!;
+    expect(row.name).toBe('weekly-report');
+    expect(row.description).toBe('new');
   });
 
-  it('does not reseed a non-empty skills dir', () => {
-    fs.mkdirSync(path.join(dir, 'already-here'));
-    seedExamples(dir);
-    expect(fs.existsSync(path.join(dir, 'weekly-report'))).toBe(false);
+  it('keeps bot assignments across the rename', () => {
+    writeFile('weekly-report', 'Weekly Report', 'old');
+    skills.syncFromDisk();
+    const skill = store.getSkillBySlug('weekly-report')!;
+    const bot = store.createBot({ name: 'Ana', title: 't', description: 'j' });
+    store.setBotSkills(bot.id, [skill.id]);
+
+    writeFile('weekly-report', 'weekly-report', 'new');
+    skills.refreshFromDisk(['weekly-report']);
+
+    expect(store.listBotSkills(bot.id).map((s) => s.name)).toEqual(['weekly-report']);
+  });
+
+  it('reports nothing when the file and the row already agree', () => {
+    writeFile('alpha', 'alpha', 'same');
+    skills.syncFromDisk();
+    expect(skills.refreshFromDisk(['alpha'])).toEqual([]);
+  });
+
+  it('ignores slugs with no row and slugs with no file', () => {
+    writeFile('alpha', 'alpha', 'a');
+    expect(skills.refreshFromDisk(['alpha'])).toEqual([]); // never registered
+    skills.syncFromDisk();
+    fs.rmSync(path.join(dir, 'alpha'), { recursive: true, force: true });
+    expect(skills.refreshFromDisk(['alpha', 'nonexistent'])).toEqual([]);
+  });
+
+  it('keeps the registered name when a file loses its frontmatter name', () => {
+    writeFile('alpha', 'alpha', 'a');
+    skills.syncFromDisk();
+    fs.writeFileSync(path.join(dir, 'alpha', 'SKILL.md'), '# no frontmatter\n');
+    skills.refreshFromDisk(['alpha']);
+    expect(store.getSkillBySlug('alpha')!.name).toBe('alpha');
   });
 });
 
@@ -274,6 +327,63 @@ describe('installFromSource — a multi-skill source needs opting in', () => {
     const installed = await skills.installFromSource(src, { allowMultiple: true });
     expect(installed).toHaveLength(2);
     expect(store.listSkills()).toHaveLength(2);
+  });
+});
+
+describe('installFromSource — spec check in the manifest', () => {
+  let dir: string;
+  let store: Store;
+  let skills: SkillStore;
+  const temps: string[] = [];
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antbot-'));
+    store = new Store(openDb(':memory:'));
+    skills = new SkillStore(store, dir);
+  });
+  afterEach(() => {
+    for (const t of [dir, ...temps]) fs.rmSync(t, { recursive: true, force: true });
+    temps.length = 0;
+  });
+
+  function makeSkillDir(dirName: string, frontmatterName: string, body = 'body'): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'antbot-src-'));
+    fs.mkdirSync(path.join(root, dirName), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, dirName, 'SKILL.md'),
+      `---\nname: ${frontmatterName}\ndescription: a skill\n---\n\n${body}\n`,
+    );
+    temps.push(root);
+    return root;
+  }
+
+  it('says nothing extra when the skill conforms', async () => {
+    const [installed] = await skills.installFromSource(makeSkillDir('alpha', 'alpha'));
+    expect(installed!.manifestText).not.toContain('spec');
+  });
+
+  it('flags a non-conforming skill without refusing to install it', async () => {
+    // A third-party skill with a sloppy frontmatter still works; staying silent about it is
+    // how it stays broken.
+    const [installed] = await skills.installFromSource(makeSkillDir('alpha', 'Alpha Skill'));
+    expect(installed!.manifestText).toContain('does not conform');
+    expect(installed!.manifestText).toContain('name-charset');
+    expect(store.listSkills()).toHaveLength(1);
+  });
+
+  it('calls out a name/directory mismatch specifically', async () => {
+    // installFromSource lands the skill in a directory named after `slugify(name)`, so a
+    // mismatch only arises when the name itself is not already a slug — "Alpha Skill" is
+    // written to alpha-skill/, and the frontmatter then disagrees with its own directory.
+    const [installed] = await skills.installFromSource(makeSkillDir('alpha', 'Alpha Skill'));
+    expect(installed!.manifestText).toContain('name-dir-mismatch');
+    expect(installed!.manifestText).toContain('bots cannot actually enable this skill');
+  });
+
+  it('flags a reference the skill does not ship', async () => {
+    const src = makeSkillDir('alpha', 'alpha', 'See [the guide](references/GUIDE.md).');
+    const [installed] = await skills.installFromSource(src);
+    expect(installed!.manifestText).toContain('reference-missing');
   });
 });
 

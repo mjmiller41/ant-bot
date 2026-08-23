@@ -15,13 +15,20 @@ import { SecretsService, pickBackend } from './permissions/secrets.js';
 const log = logger('app');
 
 /**
- * Import a subsystem that may not be built yet. The specifier is assembled at
- * runtime so the compiler does not require the module to exist.
+ * Load a subsystem that may not work on this machine — no Playwright installed, no fts5 — so the
+ * daemon still boots without it.
+ *
+ * `load` must be a thunk around a *literal* dynamic import. This used to take a specifier string
+ * and assemble it at runtime (`import(\`${spec}\`)`) so the compiler would not require the module
+ * to exist; every one of them exists now, and the runtime-assembled form is invisible to a
+ * bundler — the published build resolved them relative to the bundle, found nothing, and booted
+ * with skills, browser and scheduler all silently missing.
  */
-async function optionalImport(spec: string): Promise<any | null> {
+async function optionalImport(name: string, load: () => Promise<unknown>): Promise<any | null> {
   try {
-    return await import(/* @vite-ignore */ `${spec}`);
-  } catch {
+    return await load();
+  } catch (err) {
+    log.warn(`${name} module could not be loaded`, (err as Error).message);
     return null;
   }
 }
@@ -47,7 +54,7 @@ export interface App {
 
 export async function createApp(opts: { root?: string; withAgent?: boolean } = {}): Promise<App> {
   const cfg = loadConfig(opts.root);
-  const db = openDb(cfg.paths.db);
+  const db = openDb(cfg.paths.db, { backupsDir: cfg.paths.backups });
   const store = new Store(db);
 
   // config.toml holds first-run defaults; the DB is authoritative afterwards.
@@ -135,10 +142,10 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
 
 async function wireSkills(app: App): Promise<void> {
   try {
-    const mod = await optionalImport('./skills/skills.js');
-    const pluginMod = await optionalImport('./skills/plugin.js');
+    const mod = await optionalImport('skills', () => import('./skills/skills.js'));
+    const pluginMod = await optionalImport('skill plugin', () => import('./skills/plugin.js'));
     const Ctor = mod?.SkillStore ?? mod?.default;
-    if (!Ctor) return;
+    if (!Ctor) return void log.warn('skills subsystem unavailable: no SkillStore export');
 
     // The skills directory doubles as a local plugin root so the SDK can load skills
     // natively; individual skills live one level down, under `skills/`.
@@ -152,17 +159,31 @@ async function wireSkills(app: App): Promise<void> {
     const filesDir: string = pluginMod?.skillFilesDir?.(pluginRoot) ?? pluginRoot;
 
     app.skills = new Ctor(app.store, filesDir);
-    if (mod?.seedExamples) {
-      try { mod.seedExamples(filesDir); } catch (e) { log.warn('skill examples not seeded', (e as Error).message); }
-    }
-    // Skills committed to the ant-bot project itself are installed on every boot, so a
-    // skill can be version-controlled alongside the code that uses it.
-    if (mod?.syncProjectSkills) {
+
+    // Skills shipped with ant-bot are installed on every boot and refreshed in place, but
+    // only while the user has not edited or deleted their copy — see skills/bundled.ts.
+    const bundledMod = await optionalImport('bundled skills', () => import('./skills/bundled.js'));
+    if (bundledMod?.syncBundledSkills) {
       try {
-        const added: string[] = mod.syncProjectSkills(filesDir);
-        if (added.length) log.info(`installed ${added.length} project skill(s): ${added.join(', ')}`);
+        const decisions: { slug: string; action: string }[] = bundledMod.syncBundledSkills(filesDir);
+        const took = (action: string): string[] =>
+          decisions.filter((d) => d.action === action).map((d) => d.slug);
+        const installed = took('install');
+        const updated = took('update');
+        const kept = [...took('skip-modified'), ...took('skip-foreign')];
+        if (installed.length) log.info(`installed ${installed.length} bundled skill(s): ${installed.join(', ')}`);
+        if (updated.length) log.info(`updated ${updated.length} bundled skill(s): ${updated.join(', ')}`);
+        if (kept.length) log.info(`left ${kept.length} locally-modified skill(s) alone: ${kept.join(', ')}`);
+
+        // syncFromDisk only registers slugs the db has never seen, so a skill whose shipped
+        // frontmatter `name` changed would keep its old registered name — and the SDK is handed
+        // registered names as `enabledSkills`, so it would silently stop resolving for every bot
+        // that had it enabled.
+        const written = [...installed, ...updated, ...took('adopt')];
+        const renamed: string[] = app.skills?.refreshFromDisk?.(written) ?? [];
+        if (renamed.length) log.info(`refreshed metadata for ${renamed.length} skill(s): ${renamed.join(', ')}`);
       } catch (e) {
-        log.warn('project skills not synced', (e as Error).message);
+        log.warn('bundled skills not synced', (e as Error).message);
       }
     }
     app.skills.syncFromDisk?.();
@@ -179,12 +200,12 @@ async function wireSkills(app: App): Promise<void> {
 
 async function wireBrowser(app: App): Promise<void> {
   try {
-    const mod = await optionalImport('./computer/browser.js');
+    const mod = await optionalImport('browser', () => import('./computer/browser.js'));
     const Ctor = mod?.BrowserService ?? mod?.default;
-    if (!Ctor) return;
+    if (!Ctor) return void log.warn('browser subsystem unavailable: no BrowserService export');
     const svc = new Ctor({ profileDir: app.cfg.paths.browserProfile, bus: app.bus, headless: true });
     let toolsMod: any = null;
-    toolsMod = await optionalImport('./computer/tools.js');
+    toolsMod = await optionalImport('browser tools', () => import('./computer/tools.js'));
     // Each bot drives its own page ("screen") on the one shared browser profile.
     const cache = new Map<string, unknown>();
     svc.toolServerFor = (botId: string) => {
@@ -205,9 +226,9 @@ async function wireBrowser(app: App): Promise<void> {
 
 async function wireScheduler(app: App): Promise<void> {
   try {
-    const mod = await optionalImport('./scheduler/scheduler.js');
+    const mod = await optionalImport('scheduler', () => import('./scheduler/scheduler.js'));
     const Ctor = mod?.Scheduler ?? mod?.default;
-    if (!Ctor) return;
+    if (!Ctor) return void log.warn('scheduler subsystem unavailable: no Scheduler export');
     app.scheduler = new Ctor({
       store: app.store, bus: app.bus, manager: app.manager, getSettings: app.getSettings,
     });

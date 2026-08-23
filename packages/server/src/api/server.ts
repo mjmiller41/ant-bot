@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
@@ -11,6 +11,7 @@ import { registerCoreRoutes } from './routes-core.js';
 import { registerOpsRoutes } from './routes-ops.js';
 import { logger } from '../util/log.js';
 import { LIMITS } from '@antbot/shared';
+import { findWebDist, nodeLocateDeps } from '../util/locate.js';
 
 const log = logger('server');
 
@@ -29,14 +30,18 @@ export interface RunningServer {
   close: () => Promise<void>;
 }
 
-function findWebDist(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.resolve(here, '../../../web/dist'),
-    path.resolve(here, '../../../../packages/web/dist'),
-    path.resolve(process.cwd(), 'packages/web/dist'),
-  ];
-  return candidates.find((c) => fs.existsSync(path.join(c, 'index.html'))) ?? null;
+const require_ = createRequire(import.meta.url);
+
+function resolveWebDist(): string | null {
+  return findWebDist(
+    nodeLocateDeps(path.dirname(fileURLToPath(import.meta.url)), (spec) => {
+      try {
+        return require_.resolve(spec);
+      } catch {
+        return null;
+      }
+    }),
+  );
 }
 
 export async function startServer(opts: StartOptions = {}): Promise<RunningServer> {
@@ -116,7 +121,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
 
   /* ---------------------------- static UI ---------------------------- */
   if (opts.serveStatic !== false) {
-    const dist = findWebDist();
+    const dist = resolveWebDist();
     if (dist) {
       await fastify.register(fastifyStatic, { root: dist, prefix: '/' });
       fastify.setNotFoundHandler((req, reply) => {

@@ -21,6 +21,9 @@ Data:
   backup [--out PATH]  Archive the database, config, skills, and bot memory
   restore <path>       Restore from a backup archive
 
+Maintenance:
+  update [--check]     Update ant-bot to the latest published version
+
 Options:
   -h, --help           Show help; "antbot <command> --help" for one command
   -v, --version        Show the CLI version
@@ -87,6 +90,7 @@ Usage:
   antbot skill list
   antbot skill add <source>
   antbot skill remove <slug>
+  antbot skill lint [path]
 
 A skill is a directory containing a SKILL.md. \`add\` accepts:
 
@@ -102,7 +106,17 @@ A repository holding several skills installs all of them. Re-installing an
 existing skill upgrades it in place and keeps it assigned to its bots.
 
 Skills committed to the ant-bot project's own skills/ directory are installed
-automatically on every start.`,
+automatically on every start.
+
+\`lint\` checks skills against the Agent Skills spec (skills/SPEC.md) and needs
+no running daemon. With no path it checks everything installed; give it a path
+to check one skill you are still writing, or a directory of them:
+
+  antbot skill lint                 every installed skill
+  antbot skill lint ./skills        a directory of skills
+  antbot skill lint ./skills/my-skill   one skill
+
+Exit status is 1 if anything is an error, 0 if only warnings.`,
 
   backup: `antbot backup — create a backup archive
 
@@ -112,6 +126,21 @@ Usage: antbot backup [--out PATH]
 
 Includes antbot.db, config.toml, skills, and each bot's memory directory.
 Excludes browser-profile and attachments.`,
+
+  update: `antbot update — update ant-bot to the latest published version
+
+Usage: antbot update [--check] [--yes]
+
+  --check   Report whether a newer version exists and exit; change nothing
+  --yes     Skip the confirmation prompt
+
+Runs the package manager that installed this copy, then restarts the daemon if
+it was running. The check is cached for a day, so it costs no network most of
+the time. ant-bot never updates itself in the background: the daemon holds a
+live database handle and may be mid-turn.
+
+In a git checkout there is nothing for a package manager to update — use
+\`git pull && pnpm install\` instead.`,
 
   restore: `antbot restore — restore from a backup archive
 

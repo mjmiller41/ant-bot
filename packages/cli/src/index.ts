@@ -22,6 +22,7 @@ import {
 } from './daemon.js';
 import { createBackup, restoreBackup } from './backup.js';
 import { runSkillCommand } from './skill.js';
+import { runUpdateCommand, printUpdateNotice } from './updateCommand.js';
 
 async function runDoctorCommand(): Promise<number> {
   const paths = loadPaths();
@@ -192,12 +193,21 @@ async function main(): Promise<void> {
     case 'restart':
       process.exit(await cmdRestart(typeof parsed.flags.port === 'number' ? parsed.flags.port : undefined));
       return;
-    case 'status':
-      process.exit(await cmdStatus());
+    // The update notice is printed here rather than inside the commands themselves: it is the
+    // only thing in the CLI that touches the network, and keeping it at the dispatch layer means
+    // neither cmdStatus nor runDoctor grows a dependency on it.
+    case 'status': {
+      const code = await cmdStatus();
+      await printUpdateNotice();
+      process.exit(code);
       return;
-    case 'doctor':
-      process.exit(await runDoctorCommand());
+    }
+    case 'doctor': {
+      const code = await runDoctorCommand();
+      await printUpdateNotice();
+      process.exit(code);
       return;
+    }
     case 'open':
       process.exit(await cmdOpen());
       return;
@@ -211,6 +221,11 @@ async function main(): Promise<void> {
       return;
     case 'restore':
       process.exit(await runRestoreCommand(parsed.positionals[0], Boolean(parsed.flags.yes)));
+      return;
+    case 'update':
+      process.exit(
+        await runUpdateCommand({ check: Boolean(parsed.flags.check), yes: Boolean(parsed.flags.yes) }),
+      );
       return;
     default: {
       const _exhaustive: never = command;

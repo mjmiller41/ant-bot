@@ -88,10 +88,11 @@ directory:
   skills directory at boot, and registers any directory containing a `SKILL.md` that isn't already
   known, using the frontmatter `name`/`description` (falling back to the slug if `name` is
   missing). This is the easiest way to hand-author a skill without going through the UI.
-- **Seeded on first run** — `seedExamples()` copies the three bundled starter skills from
-  `skills-examples/` into `~/.ant-bot/skills` the first time the skills directory is empty. This is
-  a one-time seed: once anything exists in the skills directory (written, dropped in, or from a
-  prior seed), it never runs again.
+- **Bundled with ant-bot** — `syncBundledSkills()` installs everything in the project's `skills/`
+  directory on every boot, and refreshes each one when a new ant-bot version changes it. It records
+  a hash of what it wrote in `<skills dir>/.managed.json` and compares against it first, so a skill
+  you have edited is never overwritten, one you deleted is never resurrected, and a same-named skill
+  installed from elsewhere is never claimed. See `skills/README.md` for the full table.
 
 Deleting a skill (`SkillStore.deleteSkill`) removes both the directory and the database row; it
 refuses to touch any path that resolves outside the skills directory, so a corrupted or maliciously
@@ -216,19 +217,59 @@ Weekly Numbers Summary skill and post it here."* The routine's cron field maps t
 your Bot's timezone; run its **Test run** once (this performs real work) before trusting the
 schedule.
 
-## The three real examples in this repo
+## The real examples in this repo
 
-`skills-examples/` ships three complete, non-toy skills that follow this exact shape and get
-seeded into a fresh install:
+`skills/` ships five complete, non-toy skills, installed into every ant-bot. Three follow this
+exact shape:
 
-- **`skills-examples/weekly-report/SKILL.md`** — builds a Monday-morning status report from
+- **`skills/weekly-report/SKILL.md`** — builds a Monday-morning status report from
   current account/project data, with a mandatory "Could not verify" section and a rule against
   ever filling a data gap with a previous report's numbers.
-- **`skills-examples/bug-repro/SKILL.md`** — turns a raw bug report into a reliable repro pack on a
+- **`skills/bug-repro/SKILL.md`** — turns a raw bug report into a reliable repro pack on a
   fresh staging test account: numbered steps, expected vs. actual, screenshots, a minimal test
   case — with production data explicitly off-limits.
-- **`skills-examples/inbox-digest/SKILL.md`** — see the file directly for its exact shape; it
-  follows the same six sections as the other two.
+- **`skills/inbox-digest/SKILL.md`** — see the file directly for its exact shape; it
+  follows the same six sections as the others.
 
-Read all three before writing your first skill — they're the calibration for how specific each
+Read those three before writing your first skill — they're the calibration for how specific each
 section should be.
+
+**`skills/deep-research/SKILL.md`** also ships, and deliberately does *not* follow the six-section
+shape: it is a published-style skill built around a lead agent delegating to subagents, with a
+citation registry, source-type governance and a mandatory counter-review pass. Read it as the
+example of what an installed third-party skill looks like, not as the house style.
+
+**`skills/skill-author/SKILL.md`** is the skill for working on skills — writing a new one, or
+bringing an existing one up to the spec without losing what it already said. Reach for it (or read
+it yourself) before hand-editing any SKILL.md.
+
+## Conforming to the Agent Skills spec
+
+`skills/SPEC.md` is the Agent Skills specification, and everything ant-bot ships conforms to it.
+The parts that bite in practice:
+
+| Rule | Why it matters here |
+| --- | --- |
+| `name` is lowercase letters, digits and hyphens, 1–64 chars, no leading/trailing/doubled hyphen | Anything else is rejected by conforming tooling |
+| `name` matches the skill's directory name exactly | **Load-bearing.** `manager.ts` passes frontmatter names to the SDK as `enabledSkills`; a mismatch makes the skill silently unavailable to every bot that has it enabled |
+| `description` is non-empty, ≤ 1024 characters, and says both what and when | It is all the model sees when deciding whether to reach for the skill |
+| Every referenced `references/`, `scripts/` or `assets/` path actually ships | A dangling reference tells the model to read something that is not there — it loads fine and fails silently |
+| `SKILL.md` stays under 500 lines | The whole file enters context on activation; detail belongs in `references/` |
+
+Optional fields are `license`, `compatibility`, `metadata` (a string→string map) and the
+experimental `allowed-tools`. Anything else in the frontmatter belongs under `metadata`.
+
+Check any skill against all of it — no daemon required:
+
+```bash
+antbot skill lint                       # every skill installed on this machine
+antbot skill lint ./skills              # a directory of skills
+antbot skill lint ./skills/my-skill     # one skill you are still writing
+```
+
+Errors exit 1; warnings exit 0 and are printed. Installing a skill runs the same check and prints
+any violations in the install manifest — a non-conforming skill still installs, because a
+third-party skill with a sloppy frontmatter usually still works, but you are told.
+
+Two enforcement points keep this from rotting: `spec.test.ts` validates every skill in `skills/`
+as part of `pnpm test`, and `validateSkillDir()` runs on every install.

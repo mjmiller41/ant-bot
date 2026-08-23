@@ -15,6 +15,7 @@ export default tseslint.config(
     // Build output, dependencies, and generated reports are never linted.
     ignores: [
       '**/dist/**',
+      'dist-npm/**',
       '**/node_modules/**',
       '.trash/**',
       'packages/web/playwright-report/**',
@@ -47,6 +48,15 @@ export default tseslint.config(
       'no-var': 'error',
       'prefer-const': 'error',
       'no-console': 'off',
+    },
+  },
+
+  // --- repo scripts: Node, plain JS ---
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { ecmaVersion: 2023, sourceType: 'module' },
     },
   },
 

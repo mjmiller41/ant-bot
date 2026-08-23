@@ -1,5 +1,5 @@
 ---
-name: "Weekly Report"
+name: weekly-report
 description: "Builds a Monday-morning status report from the current account/project data and posts it as a linked, reviewable document."
 ---
 

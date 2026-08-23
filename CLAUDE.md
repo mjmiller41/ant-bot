@@ -19,7 +19,8 @@ pnpm test               # vitest run, all packages
 pnpm --filter @antbot/server test    # one package
 pnpm dev                # daemon only, via `node --experimental-strip-types src/main.ts`
 pnpm e2e                # Playwright, needs a live daemon on :4780
-./antbot doctor|start|stop|status|open|skill|backup|restore
+pnpm build:package      # assemble the publishable npm package into dist-npm/ (needs pnpm build first)
+./antbot doctor|start|stop|status|open|skill|backup|restore|update
 ```
 
 Your gate is `pnpm lint && pnpm typecheck && pnpm test`; run all three before claiming done.
@@ -34,9 +35,9 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 27 test files / 475 tests passing**
-(shared 19, server 349, web 49, cli 58). The table in `README.md` says 437/26 and is stale — if you
-touch it, recompute rather than copy.
+Baseline as of this checkout: **build clean, typecheck clean, 34 test files / 632 tests passing**
+(shared 19, server 450, web 49, cli 114). The table in `README.md` matches; if you touch it,
+recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
 than `packages/cli/dist/index.js`. So `./antbot status` after an edit silently triggers a full
@@ -73,10 +74,11 @@ Server internals:
 | `src/bots/prompt.ts` | System prompt assembly (persona + job description + memory + skills + roster). |
 | `src/agent/session.ts` | Thin wrapper over the SDK's `query()`; normalizes SDK messages into `TurnEvent`s. |
 | `src/permissions/` | `gateway.ts` (decision flow) · `rules.ts` (matcher + `BUILTIN_RULES`) · `local.ts` (workspace boundary) · `autoreview.ts` (Haiku) · `secrets.ts` (keychain). |
-| `src/skills/` | `skills.ts` (store, frontmatter, seeding) · `install.ts` (source parsing, git/url staging) · `plugin.ts` (local-plugin layout). |
+| `src/skills/` | `skills.ts` (store, frontmatter) · `install.ts` (source parsing, git/url staging) · `plugin.ts` (local-plugin layout) · `bundled.ts` (shipped-skill sync + ledger) · `spec.ts` (Agent Skills spec validation). |
 | `src/scheduler/scheduler.ts` | node-cron per routine, own `nextRunAt` cron evaluator, away-guard logic. |
 | `src/computer/` | `browser.ts` (Playwright persistent context, screencast, takeover) · `tools.ts` (`browser_*` MCP server). |
-| `src/db/` | `schema.ts` (raw SQL) · `store.ts` (the only place SQL lives). |
+| `src/db/` | `schema.ts` (raw SQL, = migration 1) · `migrations.ts` (ordered runner + `schema_version`) · `store.ts` (the only place SQL lives). |
+| `src/util/locate.ts` | Where the shipped web UI and bundled skills live, in a checkout and in the published package. |
 
 ---
 
@@ -141,6 +143,8 @@ and `packages/shared` together.
 **`store.ts` owns the SQL.** Four `db.prepare()` calls escape it today — a settings-count probe in
 `app.ts`, the three crash-recovery updates in `api/server.ts`, and `rule_id` on an approval in
 `gateway.ts`. That is the whole list; don't lengthen it. New queries go on `Store`.
+`db/migrations.ts` is not an exception to count: it runs before a `Store` exists, and `db/` is
+where schema SQL lives by definition.
 
 ---
 
@@ -179,10 +183,15 @@ and `packages/shared` together.
 
 ## Traps, verified against this checkout
 
-- **There is no migration runner.** `db/schema.ts` is one `CREATE TABLE IF NOT EXISTS` blob, run on
-  every open. Adding or changing a column will *not* apply to an existing `~/.ant-bot/antbot.db`.
-  Any schema change needs an explicit migration path written alongside it. (The plan doc mentions
-  `db/migrations/`; it does not exist.)
+- **Schema changes go in `db/migrations.ts`, never in `schema.ts`.** `MIGRATIONS` is an ordered
+  list applied transactionally on every open, with `schema_version` as the ledger; `planMigrations`
+  is the pure decision and `migrate()` the I/O wrapper. Migration 1 *is* `SCHEMA_SQL`, so editing
+  `schema.ts` changes what a fresh database gets and nothing else — an existing
+  `~/.ant-bot/antbot.db` never sees it. Append a new numbered migration instead, and never
+  renumber a released one. A database that predates the runner is adopted at the baseline
+  (`detectBaselineAdoption`) rather than mistaken for empty, and `migrate()` writes a `VACUUM INTO`
+  snapshot to `paths.backups` before touching a database that already holds data.
+  (The plan doc mentions a `db/migrations/` *directory*; it is a single module.)
 - **Rule seeding lives in `seedBuiltinRules(store)` in `rules.ts`**, called once from `app.ts`.
   (A dead `PermissionGateway.seedBuiltins()` static used to shadow it — it called CommonJS
   `require()` from an ESM module and would have thrown if anything had ever invoked it. Deleted.)
@@ -195,9 +204,26 @@ and `packages/shared` together.
   `<home>/skills/skills/<slug>/SKILL.md`. `SkillStore` is constructed with `skillFilesDir(root)`,
   not the root. `migrateLegacyLayout()` moves pre-plugin installs. Loading skills as a plugin is
   what gives bots the SDK's real `Skill` tool.
+- **Bundled skills are hash-managed, not copied.** The repo's `skills/` directory ships with
+  ant-bot and `syncBundledSkills()` (`skills/bundled.ts`) installs it on every boot, but it writes
+  a hash of each skill into `<skills dir>/.managed.json` and consults it first: a copy the user
+  edited is never overwritten, one they deleted is never resurrected, and a same-slug skill from
+  another source is never claimed. `planSkillSync()` is the pure decision table — change behavior
+  there, not in the I/O wrapper. A skill that is byte-identical to what ships but absent from the
+  ledger is *adopted*, which is what carries pre-ledger installs (the old `seedExamples`) forward.
+  Hashing must stay in step with `copyTree`'s exclusions (`.git`, `node_modules`, symlinks) or
+  every adopted skill looks permanently modified.
 - **`enabledSkills` passed to the SDK are frontmatter `name`s, not slugs** (`manager.ts`:
   `botSkills.map(s => s.name)`). It is a context filter, not a sandbox — skill files stay readable
-  via Read/Bash, so never put a secret in one.
+  via Read/Bash, so never put a secret in one. The registered *row* name is what is sent, so anything
+  that rewrites a SKILL.md a row already points at must call `SkillStore.refreshFromDisk()` — the
+  bundled sync does. Without it the row and the file drift and the skill silently stops resolving.
+- **Skills are validated against `skills/SPEC.md`, and `name` is the load-bearing field.**
+  `skills/spec.ts` has the rules; `validateSkillDir()` runs on every install (violations are
+  appended to the manifest, never blocking), `antbot skill lint` runs it on demand with no daemon,
+  and `spec.test.ts` asserts every bundled skill is clean. `name` must match its directory because
+  of the `enabledSkills` note above. Note that `installFromSource` lands a skill in a directory
+  named `slugify(name)`, so a mismatch can only reach disk through authoring, not through install.
 - **`execute()` sets `waiting_approval` before *every* `canUseTool` call**, including ones a rule
   auto-allows microseconds later. Bot state flickers; don't read a single `bot.state` sample as
   proof a human was asked.
@@ -219,7 +245,15 @@ and `packages/shared` together.
 - `deleteBot` soft-deletes the bot (`deleted_at`) but hard-deletes its routines and its thread.
 - Message search uses an FTS5 external-content table kept in sync by triggers, with a `LIKE`
   fallback wrapped in `try/catch`.
-- The repo currently has **zero commits** and sits on `master`; the intended PR base is `main`.
+- **Asset lookups walk up to the nearest `package.json`** (`util/locate.ts`), and must keep doing
+  so. Counting `..` from `import.meta.url` encodes both the repo layout and the compiler's output
+  depth; the published build bundles to a different depth, and every one of these lookups fails
+  *silently* when it is wrong — no UI served, no skills synced. `serverBridge.ts` keeps its own
+  copy of the walk-up on purpose: locating `@antbot/server` cannot depend on loading it.
+- **`optionalImport()` in `app.ts` takes a thunk around a *literal* `import()`.** It used to
+  assemble the specifier at runtime, which a bundler cannot follow — the published daemon booted
+  clean with skills, browser and scheduler all silently absent. `app.packaging.test.ts` fails if
+  that form comes back.
 
 ---
 
@@ -260,6 +294,11 @@ to be trusted. If your change alters behavior they describe, update them in the 
 | `docs/USER-GUIDE.md` | any user-visible behavior — and §22 whenever you close or open a gap |
 | `docs/SKILLS.md` / `skills/README.md` | the skill format, install sources, or the plugin layout |
 | `README.md` | commands, layout, requirements, the Status section |
+| `CHANGELOG.md` | any user-visible change — it is what a release note is assembled from |
+| `docs/PACKAGING-PLAN.md` | as packaging work lands; **delete it when it is all done** |
+
+`docs/PACKAGING-PLAN.md` is the opposite: a **live** plan for shipping ant-bot as an npm package,
+agreed but not started. Edit it as that work lands, and delete it when it is done.
 
 `docs/ant-bot-implementation-plan.md` and `docs/grok-bot-system-outline.md` are historical: the plan
 is what was commissioned, the outline is the Grok Bot design doctrine it was translated from. Code

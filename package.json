@@ -1,7 +1,10 @@
 {
-  "name": "ant-bot",
+  "name": "ant-bot-workspace",
+  "//": "Workspace root, deliberately NOT named \"ant-bot\": `npm i -g .` here would shadow a real `npm i -g ant-bot` with a binary-less symlink to the checkout. The publishable package is assembled into dist-npm/ by `pnpm build:package`.",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "license": "MIT",
   "packageManager": "pnpm@11.17.0",
   "engines": {
     "node": ">=24"
@@ -14,13 +17,15 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "dev": "pnpm --filter @antbot/server dev",
-    "e2e": "pnpm --filter @antbot/web e2e"
+    "e2e": "pnpm --filter @antbot/web e2e",
+    "build:package": "node scripts/build-package.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.7.0",
     "@typescript-eslint/eslint-plugin": "^8.46.0",
     "@typescript-eslint/parser": "^8.46.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",

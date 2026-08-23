@@ -10,6 +10,7 @@ export const KNOWN_COMMANDS = [
   'skill',
   'backup',
   'restore',
+  'update',
 ] as const;
 
 export type Command = (typeof KNOWN_COMMANDS)[number];
@@ -44,6 +45,10 @@ export const COMMAND_FLAGS: Record<Command, FlagSpecs> = {
     out: { type: 'string' },
   },
   restore: {
+    yes: { type: 'boolean', default: false },
+  },
+  update: {
+    check: { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
   },
 };

@@ -1,11 +1,16 @@
 node_modules/
 dist/
+dist-npm/
 *.tsbuildinfo
 .antbot-test/
 test-results/
 playwright-report/
 .DS_Store
 *.log
+# Credentials. Broad on purpose: .env.production / .env.ci must not slip past a
+# two-entry allowlist. Add an exception here if a committed .env.example is ever wanted.
+.env
+.env.*
 
 # scratch staged for deletion
 .trash

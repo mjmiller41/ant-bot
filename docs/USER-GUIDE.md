@@ -101,9 +101,9 @@ Two corollaries worth internalising before you grant anything:
 | Requirement | Why |
 | --- | --- |
 | Node.js 24 or later | The server targets Node 24 |
-| pnpm 11 | Workspace package manager |
 | The `claude` CLI, logged in | Every Bot turn runs through it — this is what bills to your subscription |
 | Chromium via Playwright | Only needed for the Computer/browser features |
+| pnpm 11 | **Only for the contributor path** — not needed to install and run ant-bot |
 
 ### Step-by-step
 
@@ -115,12 +115,24 @@ npm i -g @anthropic-ai/claude-code   # if not already installed
 claude                               # log in once, then exit
 ```
 
-**2. Install.** One command installs dependencies and builds every package.
+**2. Install ant-bot.** It ships as a single npm package containing the daemon, the CLI, the web
+UI and the bundled skills.
+
+```bash
+npm i -g ant-bot        # or: pnpm add -g ant-bot, yarn global add ant-bot, bun add -g ant-bot
+```
+
+<details>
+<summary>Working on ant-bot itself? Install from a checkout instead.</summary>
 
 ```bash
 cd /path/to/ant-bot
-pnpm install
+pnpm install            # installs dependencies and builds every package
 ```
+
+Then use `./antbot` in place of `antbot` throughout this guide. The two installs are independent;
+`ANTBOT_HOME` (see below) is what keeps their data apart if you run both.
+</details>
 
 **3. Install the browser** (skip if you do not want the Computer features):
 
@@ -142,7 +154,7 @@ Warnings are fine to proceed on; failures are not. The command exits non-zero if
 **5. Start the daemon and open the interface.**
 
 ```bash
-./antbot open
+antbot open
 ```
 
 `open` starts the daemon if it isn't already running, waits for it to become healthy, then hands
@@ -150,7 +162,7 @@ the URL to your browser. To start without opening a browser, use `./antbot start
 daemon attached to your terminal instead of detaching, add `--foreground`. Either way the UI is
 at <http://127.0.0.1:4780> if you would rather browse there yourself.
 
-> **Tip — a shorter command.** `./antbot` is a launcher script in the repo root. It rebuilds
+> **Tip — working from a checkout.** `./antbot` is a launcher script in the repo root. It rebuilds
 > automatically when sources change, so there is nothing to reinstall after a `git pull`. For a
 > plain `antbot` from any directory, symlink it somewhere already on your `PATH`:
 > ```bash
@@ -162,6 +174,25 @@ at <http://127.0.0.1:4780> if you would rather browse there yourself.
 > The rest of this guide writes `antbot` for brevity.
 
 **6. Create your first Bot.** See [section 5](#5-working-with-bots).
+
+### Staying up to date
+
+```bash
+antbot update           # upgrade to the latest published version
+antbot update --check   # report whether a newer one exists, and change nothing
+```
+
+`antbot update` re-runs whichever package manager installed your copy, then tells you to
+`antbot restart`. `status` and `doctor` also mention a newer version when one exists — the check
+is cached for a day, so it costs no network most of the time.
+
+ant-bot never updates itself in the background, by design: the daemon holds a live database
+handle and may be mid-turn spending subscription tokens, and replacing its files underneath that
+is a bad trade for a local-first tool. From a git checkout `antbot update` refuses and points you
+at `git pull` instead.
+
+Your database is migrated automatically the first time a new version opens it, and a snapshot of
+the previous database is written to `~/.ant-bot/backups/` before anything is changed.
 
 ### Development mode
 
@@ -184,7 +215,7 @@ runs this for you), `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm e2e`, and 
 antbot <command> [options]
 ```
 
-Written `./antbot` from the repo root, or plain `antbot` once it is on your `PATH` (see
+Plain `antbot` after `npm i -g ant-bot`, or `./antbot` from a checkout (see
 [section 2](#2-installation-and-first-run)). Day to day you need two of these: `antbot open` to get to work, and `antbot doctor` when something is wrong.
 
 | Command | What it does |
@@ -192,12 +223,14 @@ Written `./antbot` from the repo root, or plain `antbot` once it is on your `PAT
 | `antbot start [--port N] [--open] [--foreground]` | Start the daemon. Detached by default; `--foreground` runs it in your terminal, `--open` opens the UI once it is healthy, `--port` overrides the configured port. |
 | `antbot stop` | Stop the running daemon. |
 | `antbot restart [--port N]` | Stop the daemon and start it again. Bots, threads, and memory survive. |
+| `antbot update [--check] [--yes]` | Update to the latest published version, using whichever package manager installed this copy. `--check` reports and changes nothing. Refuses inside a git checkout. |
 | `antbot status` | Report whether ant-bot is running, on which port, with how many Bots. |
 | `antbot doctor` | Run the eight environment checks described above. |
 | `antbot open` | Open the UI in your browser, starting the daemon first if it isn't running. |
 | `antbot skill list` | List installed skills. |
 | `antbot skill add <source>` | Install a skill from a git repo, a local path, or a `SKILL.md` URL. See [section 10](#10-skills). |
 | `antbot skill remove <slug>` | Uninstall a skill. |
+| `antbot skill lint [path]` | Check skills against the Agent Skills spec. No daemon needed. See [section 10](#10-skills). |
 | `antbot backup [--out PATH]` | Write a `.tar.gz` of your database, config, skills, and Bot memory. |
 | `antbot restore <path> [--yes]` | Restore from a backup archive. Prompts for confirmation unless `--yes`. |
 
@@ -559,8 +592,8 @@ supporting files it needs. Skills are loaded into each Bot's session as a local 
 gives the Bot the real `Skill` tool — it discovers and invokes skills itself rather than being
 handed a list of file paths.
 
-Three example skills ship installed — **bug-repro**, **inbox-digest** and **weekly-report** —
-alongside anything in the ant-bot project's own `skills/` directory.
+Five skills ship installed, from the ant-bot project's own `skills/` directory —
+**bug-repro**, **deep-research**, **inbox-digest**, **skill-author** and **weekly-report**.
 
 ### Installing a skill
 
@@ -591,7 +624,33 @@ Other commands:
 ```bash
 antbot skill list              # what's installed
 antbot skill remove <slug>     # uninstall (Bots lose it immediately)
+antbot skill lint              # check installed skills against the spec
 ```
+
+### Checking a skill against the spec
+
+Skills follow the [Agent Skills specification](https://agentskills.io) — `skills/SPEC.md` in the
+project. `antbot skill lint` checks any skill against it and needs no running daemon:
+
+```bash
+antbot skill lint                       # every skill installed on this machine
+antbot skill lint ./path/to/skills      # a directory of skills
+antbot skill lint ./path/to/my-skill    # one skill you are writing
+```
+
+It reports errors (exit 1) and warnings (exit 0). The one worth understanding is
+**`name-dir-mismatch`**: a skill's frontmatter `name` must match its directory name exactly,
+because that name is what ant-bot hands the model as the list of skills a Bot may use. When they
+disagree the skill installs, appears in the UI, and can be assigned — but the Bot can never
+actually reach it. Nothing errors; it simply never fires.
+
+Installing a skill runs the same check and prints anything it finds in the install output. A
+non-conforming skill still installs — plenty of useful third-party skills have sloppy frontmatter
+— but you are told what is wrong with it.
+
+To write a new skill or repair an existing one, assign a Bot the **skill-author** skill, or read
+`skills/skill-author/SKILL.md` yourself: it carries the authoring rules and a checklist for
+rewriting a skill without silently dropping what it used to say.
 
 Or over HTTP, which is all the CLI does:
 
@@ -622,7 +681,7 @@ landed on disk and flags anything executable:
 Installing does **not** enable anything — a skill is inert until you assign it to a Bot. That is
 the moment to review a skill that brought scripts with it.
 
-### Skills that live in the ant-bot project
+### Skills that ship with ant-bot
 
 Any skill under the project's `skills/` directory is installed automatically on every start, so a
 skill can be version-controlled alongside the code that uses it:
@@ -634,8 +693,22 @@ ant-bot/
         └── SKILL.md
 ```
 
-The project directory is the source of truth for anything it contains — edit the file, restart the
-daemon, and the change is live. Skills installed from other sources are left alone.
+These stay current across upgrades without ever overwriting your work. ant-bot records a hash of
+each skill as it installs it, in `~/.ant-bot/skills/skills/.managed.json`, and checks it on the
+next start:
+
+| Your copy of a shipped skill | What happens on the next start |
+| --- | --- |
+| Never installed | It gets installed |
+| Untouched since ant-bot wrote it | It is refreshed if the shipped version changed |
+| Edited by you | Left alone — your edits survive upgrades |
+| Deleted by you | Stays deleted |
+| Same name, installed from elsewhere | Left alone — ant-bot never claims a skill it did not write |
+
+So editing your installed copy **forks** it: it will not pick up later ant-bot changes. If you want
+both, edit the copy in the project's `skills/` directory instead — restart the daemon and the change
+is live, because your installed copy is untouched and therefore refreshed. Skills installed from
+other sources are never affected.
 
 ### Letting a Bot install its own skills
 
@@ -1122,6 +1195,9 @@ first boot has no effect, and UI changes are never written back to it.
   `/api/skills/install` endpoint, or the project's `skills/` directory. Assigning existing skills
   to Bots does work in the UI.
 - **Secrets have no screen.** Manage them with the API calls in [section 14](#14-secrets).
+- **The update check is command-line only.** `antbot status`, `antbot doctor` and `antbot update`
+  report a newer version; Settings does not. Surfacing it there needs an API endpoint, and the
+  HTTP contract is frozen — see `docs/API-CONTRACT.md`.
 - **A Bot's `request_secret` call is invisible.** The request reaches the browser and is stored in
   the client, but nothing renders it — so you will not be prompted. The Bot's message will mention
   it; supply the value with the API. (And per above, the value still will not reach the Bot.)

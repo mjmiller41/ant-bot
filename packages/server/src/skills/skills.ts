@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Store } from '../db/store.js';
 import { slugify } from '../util/ids.js';
 import type { Skill } from '@antbot/shared';
@@ -133,72 +132,6 @@ export function renderSkillFile(input: { name: string; description: string; body
   return `---\nname: "${esc(input.name)}"\ndescription: "${esc(input.description)}"\n---\n\n${input.bodyMd.trim()}\n`;
 }
 
-function copyDirRecursive(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDirRecursive(s, d);
-    else fs.copyFileSync(s, d);
-  }
-}
-
-/** Default location of the bundled starter skills, resolved relative to this module. */
-function defaultExamplesDir(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  // packages/server/src/skills -> repo root -> skills-examples
-  return path.join(here, '../../../../skills-examples');
-}
-
-/**
- * Copy the bundled starter skills into `targetDir` if it doesn't already contain any skill
- * directories. Safe to call on every boot: it is a no-op once anything has been seeded/written.
- */
-export function seedExamples(targetDir: string, examplesDir: string = defaultExamplesDir()): void {
-  fs.mkdirSync(targetDir, { recursive: true });
-  const hasAny = fs
-    .readdirSync(targetDir, { withFileTypes: true })
-    .some((e) => e.isDirectory());
-  if (hasAny) return;
-  if (!fs.existsSync(examplesDir)) return;
-  for (const entry of fs.readdirSync(examplesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    copyDirRecursive(path.join(examplesDir, entry.name), path.join(targetDir, entry.name));
-  }
-}
-
-/** Skills committed to the ant-bot project itself: `<repo>/skills/<slug>/SKILL.md`. */
-function defaultProjectSkillsDir(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  // packages/server/{src,dist}/skills -> repo root -> skills
-  return path.join(here, '../../../../skills');
-}
-
-/**
- * Copy skills that live in the ant-bot project into the installed skills directory, so a
- * skill can be version-controlled alongside the code that uses it. Runs on every boot and
- * refreshes in place, which makes the project directory the source of truth for anything
- * it contains — edit the file in the repo, restart, and the change is live.
- */
-export function syncProjectSkills(
-  targetDir: string,
-  projectDir: string = defaultProjectSkillsDir(),
-): string[] {
-  if (!fs.existsSync(projectDir)) return [];
-  fs.mkdirSync(targetDir, { recursive: true });
-  const synced: string[] = [];
-  for (const entry of fs.readdirSync(projectDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const src = path.join(projectDir, entry.name);
-    if (!fs.existsSync(path.join(src, 'SKILL.md'))) continue;
-    const dest = path.join(targetDir, entry.name);
-    fs.rmSync(dest, { recursive: true, force: true });
-    copyDirRecursive(src, dest);
-    synced.push(entry.name);
-  }
-  return synced;
-}
-
 /**
  * Raised when a source resolves to more than one skill and the caller did not opt in.
  * Carries the names so the caller can tell the human (or the model) what to narrow to.
@@ -291,10 +224,17 @@ export class SkillStore {
               slug, name: skill.name, description: skill.description, path: dir, source: 'imported',
             });
 
+        // Installed skills are held to the same spec as the ones ant-bot ships. This never
+        // blocks an install — a third-party skill with a sloppy frontmatter still works — but
+        // a `name` that does not match its directory makes the skill impossible for a bot to
+        // enable, and silence about that is how it stays broken.
+        const { validateSkillDir, formatSpecViolations } = await import('./spec.js');
+        const specNotes = formatSpecViolations(validateSkillDir(dir));
+
         out.push({
           skill: registered,
           executables: skill.manifest.executables,
-          manifestText: renderManifest(skill, dir),
+          manifestText: renderManifest(skill, dir) + specNotes,
           replaced: Boolean(existing),
         });
       }
@@ -347,6 +287,31 @@ export class SkillStore {
       }
     }
     return { repaired, removed };
+  }
+
+  /**
+   * Re-read `name`/`description` from disk for the given slugs and update their rows.
+   *
+   * Registered names are not cosmetic — `manager.ts` hands them to the SDK as `enabledSkills`,
+   * so a row whose name has drifted from its SKILL.md silently stops matching and the skill
+   * quietly disappears from every bot that had it enabled. Any writer of a skill file that a
+   * row already points at has to call this; `syncFromDisk` cannot, since it only ever looks at
+   * slugs the db has never seen. Returns the slugs whose stored metadata actually changed.
+   */
+  refreshFromDisk(slugs: string[]): string[] {
+    const changed: string[] = [];
+    for (const slug of slugs) {
+      const registered = this.store.getSkillBySlug(slug);
+      if (!registered) continue;
+      const file = path.join(this.skillsDir, slug, 'SKILL.md');
+      if (!fs.existsSync(file)) continue;
+      const { name, description } = parseFrontmatter(fs.readFileSync(file, 'utf8'));
+      const nextName = name || registered.name;
+      if (nextName === registered.name && description === (registered.description ?? '')) continue;
+      this.store.updateSkill(registered.id, { name: nextName, description });
+      changed.push(slug);
+    }
+    return changed;
   }
 
   /**
