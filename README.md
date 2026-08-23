@@ -107,11 +107,41 @@ ln -s "$PWD/antbot" ~/.local/bin/antbot   # or /usr/local/bin, or anywhere on yo
 The launcher resolves symlinks, so it still finds the repo and rebuilds when sources change.
 From the repo root you can also skip the `./` with `pnpm antbot status`.
 
-### Data directory
+### Where your data lives
 
-Data lives under `~/.ant-bot` by default (database, workspace, skills, attachments, browser
-profile, logs, backups). Set **`ANTBOT_HOME`** to point the daemon and CLI at a different data
-directory, e.g. for a second profile or a test instance:
+Everything ant-bot creates lives in one directory you own, in plain files you can read. Nothing
+is hidden in a service, and nothing leaves the machine. Go and look:
+
+```
+~/.ant-bot/
+├── antbot.db            SQLite: bots, threads, messages, approvals, rules, routines, usage
+├── config.toml          port and host (re-read each boot) + first-run setting defaults
+├── workspace/           ← the Bots' computer. This is the security boundary.
+│   ├── bots/<slug>/     each Bot's own folder: its files, and memory/*.md
+│   └── projects/        shared project files — durable work lives here
+├── skills/              installed skills, as a local Claude plugin
+│   └── skills/<slug>/SKILL.md
+├── attachments/         files you upload into threads
+├── browser-profile/     the shared Chromium profile: cookies, logins, sessions
+├── backups/             `antbot backup` archives, and pre-migration DB snapshots
+└── logs/                daemon logs
+```
+
+**`workspace/` is the important one.** It is the Bots' computer, and everything outside it is
+*your* machine. A tool call that reaches outside the workspace is denied, or forced to a human
+prompt, depending on your `localExecution` setting — and that check runs *before* any "allow" rule
+you have written, so a broad rule cannot be used to reach `~/.ssh`. Work inside the workspace runs
+without a prompt; work outside it does not. See [`docs/SECURITY.md`](docs/SECURITY.md).
+
+**`workspace/bots/<slug>/memory/*.md`** is worth knowing about: those markdown files are read back
+into that Bot's system prompt every turn. Editing one edits what the Bot remembers. Deleting one
+makes it forget.
+
+A Bot's folder outlives the Bot — deleting a Bot removes its threads and routines but leaves its
+files, since the workspace is shared and other Bots may depend on them.
+
+Set **`ANTBOT_HOME`** to point the daemon and CLI at a different data directory, e.g. for a second
+profile or a test instance:
 
 ```bash
 ANTBOT_HOME=/path/to/alt-home ./antbot start --port 4791
@@ -168,7 +198,7 @@ ANTBOT_HOME=/path/to/alt-home ./antbot start --port 4791
 │                  └──────┬──────────────────────────────────────────┘                             │
 │                         │                                                                         │
 │  ┌──────────────────────▼───────────────┐   ┌──────────────────────────────────────────────┐    │
-│  │ Computer service (packages/server/    │   │ Storage: SQLite (better-sqlite3, WAL) —      │    │
+│  │ Computer service (daemon/             │   │ Storage: SQLite (better-sqlite3, WAL) —      │    │
 │  │  src/computer): Playwright persistent │   │ bots, threads, messages, approvals, rules,    │    │
 │  │  profile, per-bot screen lock,        │   │ skills, routines, mailbox, usage, settings +  │    │
 │  │  screencast, takeover                 │   │ ~/.ant-bot/workspace + attachments on disk    │    │
@@ -184,7 +214,7 @@ Permission Gateway before the tool is allowed to run — this is true for the bu
 
 ## CLI commands
 
-All commands are implemented in `packages/cli`. Run them as `./antbot <command>` from the repo
+All commands are implemented in `cli`. Run them as `./antbot <command>` from the repo
 root, or as plain `antbot <command>` once it is [on your `PATH`](#putting-antbot-on-your-path).
 
 | Command | Description |
@@ -204,24 +234,40 @@ Every command takes `--help`, e.g. `antbot start --help`.
 
 ## Project layout
 
+Four workspace packages at the repo root, each with its own README explaining what it is and why
+it exists. The dependency direction only ever points one way:
+
+```
+contract  ←  daemon  ←  cli
+   ↑
+   └────  ui
+```
+
 | Path | What it is |
 |---|---|
-| `packages/shared` | Zod schemas + TypeScript types for every entity and API request/response, `LIMITS` constants, the WS event union — imported by both server and web |
-| `packages/server` | The daemon: Fastify API + WS (`src/api`), Bot lifecycle and queue (`src/bots`), Agent SDK wrapper (`src/agent`), Permission Gateway + rules + secrets (`src/permissions`), scheduler/cron (`src/scheduler`), skills store (`src/skills`), browser/computer service (`src/computer`), SQLite layer (`src/db`), config + paths (`src/config`) |
-| `packages/web` | React 19 + Vite UI: sidebar, thread view, approval cards, rules/settings/routines/usage screens, workspace browser, command palette |
-| `packages/cli` | The `antbot` CLI: start/stop/restart/status/doctor/open/skill/backup/restore |
-| `skills/` | The skills that ship with ant-bot — `bug-repro`, `deep-research`, `inbox-digest`, `skill-author`, `weekly-report` — plus `SPEC.md`, the Agent Skills spec they all conform to. Installed into `~/.ant-bot/skills` on every start and refreshed on upgrade unless you have edited or deleted your copy |
-| `computer/` | Placeholder for an optional containerized "computer" image — **not implemented** (see Status below) |
-| `docs/` | This plan, the design-doctrine outline it's translated from, and the frozen API contract |
+| [`contract/`](contract/) | **The shared vocabulary.** Zod schemas and types for every entity, request, response and websocket event, plus `LIMITS`. Both the daemon and the UI import from here; it imports from nothing. One declaration per shape, so the two sides cannot drift. |
+| [`daemon/`](daemon/) | **The thing that runs.** Fastify API + websocket, Bot turn queue, the Agent SDK wrapper, the Permission Gateway, the scheduler, the skills store, the browser service, and SQLite. Start reading at `src/app.ts`. |
+| [`ui/`](ui/) | **The web interface.** React 19 + Vite + Tailwind v4. Built to `ui/dist/` and served by the daemon itself — there is no separate frontend server. |
+| [`cli/`](cli/) | **The `antbot` command.** start/stop/status/doctor/open/skill/backup/restore/update. Kept separate from the daemon so `antbot doctor` still works when the daemon does not. |
+| [`skills/`](skills/) | The skills that ship with ant-bot, plus [`SPEC.md`](skills/SPEC.md), the Agent Skills spec they conform to. Synced into `~/.ant-bot/skills` on every start, and never overwritten if you have edited your copy. |
+| [`docs/`](docs/) | [`USER-GUIDE.md`](docs/USER-GUIDE.md) (the manual), [`SECURITY.md`](docs/SECURITY.md) (the trust model), [`API-CONTRACT.md`](docs/API-CONTRACT.md) (frozen HTTP/WS contract), [`SKILLS.md`](docs/SKILLS.md). Plus two historical design records that are deliberately not kept in sync with the code. |
+| [`scripts/`](scripts/) | `build-package.mjs`, which assembles the publishable npm package into `dist-npm/`. |
+| [`CLAUDE.md`](CLAUDE.md) | Guidance for agents — and the densest description of the invariants and traps in this codebase. Worth reading even if you are human. |
+
+### Where to start reading
+
+1. **Using it?** [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md).
+2. **Evaluating whether to trust it?** [`docs/SECURITY.md`](docs/SECURITY.md), then "Where your data lives" above.
+3. **Changing it?** [`CLAUDE.md`](CLAUDE.md), then `daemon/src/app.ts` — the composition root, which builds every subsystem in order.
 
 ## Testing
 
 Each package uses Vitest. Run all of them from the repo root with `pnpm test`, or per package:
 
 ```bash
-pnpm --filter @antbot/shared test
-pnpm --filter @antbot/server test
-pnpm --filter @antbot/web test
+pnpm --filter @antbot/contract test
+pnpm --filter @antbot/daemon test
+pnpm --filter @antbot/ui test
 pnpm --filter @antbot/cli test
 ```
 
@@ -229,9 +275,9 @@ Current totals, as run against this checkout:
 
 | Package | Test files | Tests |
 |---|---|---|
-| `@antbot/shared` | 1 | 22 |
-| `@antbot/server` | 19 | 450 |
-| `@antbot/web` | 7 | 52 |
+| `@antbot/contract` | 1 | 22 |
+| `@antbot/daemon` | 19 | 450 |
+| `@antbot/ui` | 7 | 52 |
 | `@antbot/cli` | 7 | 116 |
 | **Total** | **34** | **640** |
 
@@ -240,9 +286,8 @@ Current totals, as run against this checkout:
 Honestly, as of this checkout:
 
 - **Container computer mode** — `computer.mode` is a valid `"host" | "container"` setting in the
-  schema and shows up in Settings, but only `host` mode has an implementation; the `computer/`
-  directory in the repo is an empty placeholder. There is no container image, and selecting
-  `container` does not change daemon behavior.
+  schema and shows up in Settings, but only `host` mode has an implementation. There is no
+  container image, and selecting `container` does not change daemon behavior.
 - **Teach-by-demonstration** — not implemented. There is no trace recording, no draft-skill-from-
   recording flow, and no "Teach a task" UI affordance anywhere in the codebase.
 - **Event-trigger webhooks** — not implemented. Routines only fire on a cron schedule

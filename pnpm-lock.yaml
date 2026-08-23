@@ -48,14 +48,14 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(supports-color@7.2.0))(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/cli:
+  cli:
     dependencies:
-      '@antbot/server':
+      '@antbot/contract':
         specifier: workspace:*
-        version: link:../server
-      '@antbot/shared':
+        version: link:../contract
+      '@antbot/daemon':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../daemon
     devDependencies:
       '@types/node':
         specifier: ^24.7.0
@@ -67,11 +67,24 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(supports-color@7.2.0))(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/server:
+  contract:
     dependencies:
-      '@antbot/shared':
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(supports-color@7.2.0))(lightningcss@1.33.0)(supports-color@7.2.0)
+
+  daemon:
+    dependencies:
+      '@antbot/contract':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../contract
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.238
         version: 0.3.238(@anthropic-ai/sdk@0.120.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.30.0(supports-color@7.2.0)(zod@4.4.3))(zod@4.4.3)
@@ -119,24 +132,11 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(supports-color@7.2.0))(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/shared:
+  ui:
     dependencies:
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(supports-color@7.2.0))(lightningcss@1.33.0)(supports-color@7.2.0)
-
-  packages/web:
-    dependencies:
-      '@antbot/shared':
+      '@antbot/contract':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../contract
       clsx:
         specifier: ^2.1.1
         version: 2.1.1

@@ -43,7 +43,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Chromium for the live browser tests
-        run: pnpm --filter @antbot/server exec playwright install --with-deps chromium
+        run: pnpm --filter @antbot/daemon exec playwright install --with-deps chromium
 
       # The same gate as ci.yml, and for the same reason: each check reports independently.
       # A release must never publish something that would have failed CI.

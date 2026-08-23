@@ -6,7 +6,7 @@ today — `bug-repro`, `deep-research`, `inbox-digest`, `skill-author` and `week
 double as the worked examples in `docs/SKILLS.md`.
 
 `SPEC.md` here is the Agent Skills specification. Every skill in this directory conforms to it, and
-a test enforces that (`packages/server/src/skills/spec.test.ts`), so a non-conforming skill cannot
+a test enforces that (`daemon/src/skills/spec.test.ts`), so a non-conforming skill cannot
 land. Check your own with:
 
 ```bash

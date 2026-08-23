@@ -201,7 +201,7 @@ To run the server from TypeScript without building, and the UI with hot reload:
 
 ```bash
 pnpm dev                              # server on :4780, via node --experimental-strip-types
-pnpm --filter @antbot/web dev         # Vite dev server, proxies /api to :4780
+pnpm --filter @antbot/ui dev         # Vite dev server, proxies /api to :4780
 ```
 
 Other repo-level scripts: `pnpm build` (all four packages, in dependency order — `pnpm install`

@@ -6,6 +6,16 @@ All notable changes to ant-bot are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Repo layout flattened.** The four workspace packages moved out of `packages/` to the repo
+  root as `contract/`, `daemon/`, `ui/` and `cli/`, and their npm names follow
+  (`@antbot/shared` → `@antbot/contract`, `@antbot/server` → `@antbot/daemon`,
+  `@antbot/web` → `@antbot/ui`). Each now has a README saying what it is and why it exists.
+  No behaviour change; the published package is unaffected.
+- **README leads with where your data lives** — a map of `~/.ant-bot`, what each directory holds,
+  and why `workspace/` is the security boundary rather than just a folder.
+
 ### Added
 
 - **`fable` and `haiku` model tiers for Bots.** `haiku` was already valid in the schema but no

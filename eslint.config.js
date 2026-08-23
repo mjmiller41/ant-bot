@@ -18,8 +18,8 @@ export default tseslint.config(
       'dist-npm/**',
       '**/node_modules/**',
       '.trash/**',
-      'packages/web/playwright-report/**',
-      'packages/web/test-results/**',
+      'ui/playwright-report/**',
+      'ui/test-results/**',
     ],
   },
 
@@ -62,7 +62,7 @@ export default tseslint.config(
 
   // --- server / cli / shared: Node ---
   {
-    files: ['packages/{server,cli,shared}/**/*.ts'],
+    files: ['{daemon,cli,contract}/**/*.ts'],
     languageOptions: {
       globals: { ...globals.node },
       parserOptions: { ecmaVersion: 2023, sourceType: 'module' },
@@ -71,7 +71,7 @@ export default tseslint.config(
 
   // --- web: browser + React ---
   {
-    files: ['packages/web/**/*.{ts,tsx}'],
+    files: ['ui/**/*.{ts,tsx}'],
     plugins: { react, 'react-hooks': reactHooks },
     languageOptions: {
       globals: { ...globals.browser },
@@ -103,13 +103,13 @@ export default tseslint.config(
 
   // --- tests: Vitest globals, and assertions that read oddly to core rules ---
   {
-    files: ['**/*.test.{ts,tsx}', 'packages/web/src/test/**', 'packages/web/e2e/**'],
+    files: ['**/*.test.{ts,tsx}', 'ui/src/test/**', 'ui/e2e/**'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 
   // --- loose scripts: live smoke checks, run by hand against a real daemon ---
   {
-    files: ['packages/server/.smoke/**/*.mjs'],
+    files: ['daemon/.smoke/**/*.mjs'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: {
       'no-unused-vars': 'off',

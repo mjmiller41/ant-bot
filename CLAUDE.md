@@ -16,7 +16,7 @@ pnpm install            # installs AND builds (root `prepare` = `pnpm run build`
 pnpm build              # tsc for shared/server/cli, vite for web
 pnpm typecheck          # tsc --noEmit, all packages
 pnpm test               # vitest run, all packages
-pnpm --filter @antbot/server test    # one package
+pnpm --filter @antbot/daemon test    # one package
 pnpm dev                # daemon only, via `node --experimental-strip-types src/main.ts`
 pnpm e2e                # Playwright, needs a live daemon on :4780
 pnpm build:package      # assemble the publishable npm package into dist-npm/ (needs pnpm build first)
@@ -40,7 +40,7 @@ Baseline as of this checkout: **build clean, typecheck clean, 34 test files / 64
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
-than `packages/cli/dist/index.js`. So `./antbot status` after an edit silently triggers a full
+than `cli/dist/index.js`. So `./antbot status` after an edit silently triggers a full
 build first. Set **`ANTBOT_HOME`** to run a throwaway instance against a scratch data dir:
 
 ```bash
@@ -52,17 +52,20 @@ ANTBOT_HOME=/tmp/antbot-scratch ./antbot start --port 4791 --foreground
 ## Layout and dependency direction
 
 ```
-packages/shared  →  zod schemas + types for every entity, API request/response,
-                    LIMITS constants, the ServerEvent union. No runtime deps but zod.
-packages/server  →  the daemon. Depends on shared.
-packages/cli     →  the `antbot` binary. Depends on server (lazily) and shared.
-packages/web     →  React 19 + Vite + Tailwind v4 UI. Depends on shared.
+contract/  (@antbot/contract)  →  zod schemas + types for every entity, API request/response,
+                                  LIMITS constants, the ServerEvent union. No runtime deps but zod.
+daemon/    (@antbot/daemon)    →  the daemon. Depends on contract.
+cli/       (@antbot/cli)       →  the `antbot` binary. Depends on daemon (lazily) and contract.
+ui/        (@antbot/ui)        →  React 19 + Vite + Tailwind v4 UI. Depends on contract.
 ```
 
-`shared` is the contract. **Server and web must both import from it — never redeclare a type on
-one side.** Nothing in `shared` may import from server or web.
+The four workspace packages sit at the repo root; there is no `packages/` wrapper. Each has its
+own README stating what it is and why it exists.
 
-Server internals:
+`contract` is the contract. **Daemon and ui must both import from it — never redeclare a type on
+one side.** Nothing in `contract` may import from daemon or ui.
+
+Daemon internals:
 
 | Path | Role |
 |---|---|
@@ -137,8 +140,8 @@ defaulted `SettingsSchema` would produce a complete object and reset every unmen
 including `localExecution`, which is a security control. Never swap the two.
 
 **The HTTP/WS contract is frozen.** `docs/API-CONTRACT.md` says so in its title. Adding a route is
-a contract change: update that file in the same change, and update `packages/web/src/api/client.ts`
-and `packages/shared` together.
+a contract change: update that file in the same change, and update `ui/src/api/client.ts`
+and `contract` together.
 
 **`store.ts` owns the SQL.** Four `db.prepare()` calls escape it today — a settings-count probe in
 `app.ts`, the three crash-recovery updates in `api/server.ts`, and `rule_id` on an approval in
@@ -165,7 +168,7 @@ where schema SQL lives by definition.
   `BrowserUnavailableError`, `ScreenBusyError`, `ScreenTakenOverError`, `InvalidUrlError`, `CliError`.
   Route handlers map `LimitError` to 409 (413 for attachments).
 - **Web styling** is Tailwind v4 with CSS custom properties (`bg-(--color-bg-elevated)`), light
-  theme via a `.light` class on `<html>`. Tokens live in `packages/web/src/index.css`; use them
+  theme via a `.light` class on `<html>`. Tokens live in `ui/src/index.css`; use them
   rather than raw hex.
 - **The app owns the viewport; `body` has `overflow: hidden`.** The shell is `h-dvh` and every
   screen fits inside it, scrolling in its own pane. Any flex child that is meant to scroll needs
@@ -240,7 +243,7 @@ where schema SQL lives by definition.
   drained. Anything you add that survives a restart belongs there.
 - **`browser.test.ts` launches real Chromium** (39 tests, one live). It is not hermetic — a machine
   without `npx playwright install chromium` will behave differently.
-- **`packages/server/.smoke/*.mjs` are live scripts**, not tests. They need a running daemon and a
+- **`daemon/.smoke/*.mjs` are live scripts**, not tests. They need a running daemon and a
   real `claude` login, and they do real work and spend real tokens. Run deliberately.
 - `deleteBot` soft-deletes the bot (`deleted_at`) but hard-deletes its routines and its thread.
 - Message search uses an FTS5 external-content table kept in sync by triggers, with a `LIKE`
@@ -249,7 +252,7 @@ where schema SQL lives by definition.
   so. Counting `..` from `import.meta.url` encodes both the repo layout and the compiler's output
   depth; the published build bundles to a different depth, and every one of these lookups fails
   *silently* when it is wrong — no UI served, no skills synced. `serverBridge.ts` keeps its own
-  copy of the walk-up on purpose: locating `@antbot/server` cannot depend on loading it.
+  copy of the walk-up on purpose: locating `@antbot/daemon` cannot depend on loading it.
 - **`optionalImport()` in `app.ts` takes a thunk around a *literal* `import()`.** It used to
   assemble the specifier at runtime, which a bundler cannot follow — the published daemon booted
   clean with skills, browser and scheduler all silently absent. `app.packaging.test.ts` fails if
@@ -338,7 +341,8 @@ to be trusted. If your change alters behavior they describe, update them in the 
 | `docs/SECURITY.md` | rules, the gateway, secrets, the workspace boundary, billing-env handling |
 | `docs/USER-GUIDE.md` | any user-visible behavior — and §22 whenever you close or open a gap |
 | `docs/SKILLS.md` / `skills/README.md` | the skill format, install sources, or the plugin layout |
-| `README.md` | commands, layout, requirements, the Status section |
+| `README.md` | commands, layout, requirements, the Status section, the `~/.ant-bot` data map |
+| `contract/`·`daemon/`·`ui/`·`cli/` `README.md` | that package's role, its layout, or its own gotchas |
 | `CHANGELOG.md` | any user-visible change — it is what a release note is assembled from |
 
 `docs/ant-bot-implementation-plan.md` and `docs/grok-bot-system-outline.md` are historical: the plan

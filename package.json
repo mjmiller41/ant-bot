@@ -12,12 +12,12 @@
   "scripts": {
     "build": "pnpm -r build",
     "prepare": "pnpm run build",
-    "antbot": "node packages/cli/dist/index.js",
+    "antbot": "node cli/dist/index.js",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
-    "dev": "pnpm --filter @antbot/server dev",
-    "e2e": "pnpm --filter @antbot/web e2e",
+    "dev": "pnpm --filter @antbot/daemon dev",
+    "e2e": "pnpm --filter @antbot/ui e2e",
     "build:package": "node scripts/build-package.mjs"
   },
   "devDependencies": {

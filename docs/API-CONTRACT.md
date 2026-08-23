@@ -1,6 +1,6 @@
 # ant-bot HTTP + WS contract (FROZEN — do not change without orchestrator approval)
 
-Base: `http://127.0.0.1:4780`. All JSON. All types imported from `@antbot/shared`.
+Base: `http://127.0.0.1:4780`. All JSON. All types imported from `@antbot/contract`.
 Errors: `{ error: string, code?: string }` with 4xx/5xx.
 
 ## REST
@@ -65,9 +65,9 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 - `GET /api/computer/screencast/:botId` (ws) — server pushes
   `{"type":"frame","data":"<base64 jpeg>","w":N,"h":N}`.
 
-`ServerEvent` union is defined in `@antbot/shared/events.ts`. Every event carries
+`ServerEvent` union is defined in `@antbot/contract/events.ts`. Every event carries
 `seq`, `threadId` (nullable), `botId` (nullable).
 
 ## Static
 
-The built web UI is served from `/` by the daemon (`packages/web/dist`).
+The built web UI is served from `/` by the daemon (`ui/dist`).

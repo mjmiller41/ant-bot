@@ -16,12 +16,15 @@ while [ -L "$self" ]; do
   esac
 done
 repo_root="$(cd -- "$(dirname -- "$self")" && pwd)"
-entry="$repo_root/packages/cli/dist/index.js"
+entry="$repo_root/cli/dist/index.js"
 
 needs_build() {
   [ -f "$entry" ] || return 0
-  # Rebuild when any package source is newer than the compiled CLI entry.
-  [ -n "$(find "$repo_root/packages" -name node_modules -prune -o \
+  # Rebuild when any workspace source is newer than the compiled CLI entry.
+  # The four workspace directories are named explicitly rather than scanning the repo root,
+  # so a stray .ts in scripts/ or a scratch file never triggers a full rebuild.
+  [ -n "$(find "$repo_root/contract" "$repo_root/daemon" "$repo_root/ui" "$repo_root/cli" \
+            -name node_modules -prune -o \
             -name dist -prune -o \
             -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) -newer "$entry" -print -quit)" ]
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Assembles the single npm package that end users install, into `dist-npm/`.
 //
-// The workspace is four packages; the published artifact is one. esbuild flattens shared, server
-// and cli into three entry bundles, `web/dist` and `skills/` are copied in beside them, and the
+// The workspace is four packages; the published artifact is one. esbuild flattens contract,
+// daemon and cli into three entry bundles, `web/dist` and `skills/` are copied in beside them, and the
 // package.json is generated so `files` cannot drift from what is actually there.
 //
 // What stays external, and why:
@@ -43,10 +43,10 @@ const EXTERNAL_DEPENDENCIES = {
 };
 
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
-const pkgJson = (name) => readJson(path.join(repoRoot, 'packages', name, 'package.json'));
+const pkgJson = (dir) => readJson(path.join(repoRoot, dir, 'package.json'));
 
 function resolveVersions() {
-  const declared = { ...pkgJson('server').dependencies, ...pkgJson('shared').dependencies };
+  const declared = { ...pkgJson('daemon').dependencies, ...pkgJson('contract').dependencies };
   const out = {};
   for (const name of Object.keys(EXTERNAL_DEPENDENCIES)) {
     const range = EXTERNAL_DEPENDENCIES[name] ?? declared[name];
@@ -103,7 +103,7 @@ function requireBuilt(p, what) {
 
 async function main() {
   const version = readJson(path.join(repoRoot, 'package.json')).version;
-  const webDist = path.join(repoRoot, 'packages', 'web', 'dist');
+  const webDist = path.join(repoRoot, 'ui', 'dist');
   const skillsDir = path.join(repoRoot, 'skills');
   requireBuilt(path.join(webDist, 'index.html'), 'the built web UI');
   requireBuilt(path.join(skillsDir, 'SPEC.md'), 'the bundled skills directory');
@@ -115,18 +115,18 @@ async function main() {
   await build({
     entryPoints: {
       // The bin. Loads the daemon lazily, via serverBridge.
-      index: path.join(repoRoot, 'packages', 'cli', 'src', 'index.ts'),
+      index: path.join(repoRoot, 'cli', 'src', 'index.ts'),
       // The daemon, reached by serverBridge's bundled-file candidate.
-      server: path.join(repoRoot, 'packages', 'server', 'src', 'index.ts'),
+      server: path.join(repoRoot, 'daemon', 'src', 'index.ts'),
       // Kept separate so `antbot skill lint` does not load the daemon's native dependencies.
-      'skills-spec': path.join(repoRoot, 'packages', 'server', 'src', 'skills', 'spec.ts'),
+      'skills-spec': path.join(repoRoot, 'daemon', 'src', 'skills', 'spec.ts'),
     },
     outdir: path.join(outRoot, 'dist'),
     bundle: true,
     format: 'esm',
     platform: 'node',
     target: 'node24',
-    // Shared chunks, so the three entries do not each carry their own copy of @antbot/shared.
+    // Shared chunks, so the three entries do not each carry their own copy of @antbot/contract.
     splitting: true,
     sourcemap: true,
     external,

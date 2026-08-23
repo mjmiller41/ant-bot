@@ -36,11 +36,11 @@ jobs:
       - name: Install and build
         run: pnpm install --frozen-lockfile
 
-      # packages/server/src/computer/browser.test.ts guards its live-browser suite with
+      # daemon/src/computer/browser.test.ts guards its live-browser suite with
       # `describe.skipIf(!hasChromium)`. Without this the suite silently skips and CI
       # reports green over untested code.
       - name: Install Chromium for the live browser tests
-        run: pnpm --filter @antbot/server exec playwright install --with-deps chromium
+        run: pnpm --filter @antbot/daemon exec playwright install --with-deps chromium
 
       # Each check reports independently — one failure should not hide the others.
       - name: Lint
@@ -55,6 +55,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm test
 
-# Not run here: `pnpm e2e`. The Playwright specs in packages/web/e2e drive a live daemon
+# Not run here: `pnpm e2e`. The Playwright specs in ui/e2e drive a live daemon
 # with a real `claude` login, which spends subscription tokens and needs credentials CI
 # does not have. Run those locally against a daemon you started yourself.

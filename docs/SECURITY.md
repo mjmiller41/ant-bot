@@ -23,7 +23,7 @@ outside ant-bot (separate `ANTBOT_HOME` data directories run as fully separate d
 separate workspaces, browser profiles, and secret stores).
 
 The system prompt every Bot receives says this to the model directly (see
-`packages/server/src/bots/prompt.ts`):
+`daemon/src/bots/prompt.ts`):
 
 > You share one computer with every other bot on this account. ... Files, logins and installed
 > tools are visible to all bots. Bots are **not** a security boundary. Do not store anything here
@@ -32,7 +32,7 @@ The system prompt every Bot receives says this to the model directly (see
 ## The API is unauthenticated and localhost-bound
 
 There is no login, no API key, and no session cookie on the ant-bot HTTP/WS API. The daemon binds
-to `127.0.0.1:4780` by default (`packages/server/src/config/config.ts`). Anyone who can reach that
+to `127.0.0.1:4780` by default (`daemon/src/config/config.ts`). Anyone who can reach that
 port can create Bots, read every thread, approve or deny every pending action, read and write
 files in the workspace, drive the shared browser, and read the names of every stored secret. In
 other words: **exposing the port is equivalent to handing over full control of the agent and
@@ -49,7 +49,7 @@ channel — never a raw port forward.
 Every tool call an Agent SDK turn wants to make — built-in tools (`Bash`, `Read`, `Write`, `Edit`,
 `WebFetch`, ...), the custom tools ant-bot adds (`send_to_bot`, `remember`, `request_secret`), and
 every `browser_*` action — passes through `canUseTool`, which calls
-`PermissionGateway.check()` (`packages/server/src/permissions/gateway.ts`). Three things to
+`PermissionGateway.check()` (`daemon/src/permissions/gateway.ts`). Three things to
 understand about what that gate actually does:
 
 1. **An approval gates the proposed action. It never undoes completed work.** By the time you see
@@ -58,7 +58,7 @@ understand about what that gate actually does:
    that matched an `allow` rule earlier in the same turn), no later approval decision reaches back
    and reverses it.
 2. **Precedence: `require` always beats `allow`.** `evaluateRules()` in
-   `packages/server/src/permissions/rules.ts` checks every enabled `require` rule first; if any
+   `daemon/src/permissions/rules.ts` checks every enabled `require` rule first; if any
    matches the tool name and input, that rule wins outright and the action goes to a human,
    regardless of any `allow` rule that also matches. Only when no `require` rule matches does an
    `allow` rule get a chance to auto-approve.
@@ -75,7 +75,7 @@ understand about what that gate actually does:
    `gateway.check()`: the fallback path is always `askHuman(...)`, never an implicit allow.)
 
 Approval requests time out after **15 minutes** (`LIMITS.APPROVAL_TIMEOUT_MS`,
-`packages/shared/src/limits.ts`) and resolve to `expired`, which the gateway treats as a denial —
+`contract/src/limits.ts`) and resolve to `expired`, which the gateway treats as a denial —
 the turn is told the action was not approved, it is not silently allowed through.
 
 "Always allow" on an approval card persists a new narrow `allow` rule scoped to the tool pattern
@@ -86,7 +86,7 @@ or the defaults add later will still win over it.
 ## The shipped default rules
 
 These ship enabled (except one, noted below) from `BUILTIN_RULES` in
-`packages/server/src/permissions/rules.ts`, seeded once into the `rules` table on first boot
+`daemon/src/permissions/rules.ts`, seeded once into the `rules` table on first boot
 (`PermissionGateway.seedBuiltins`). You can disable, edit, or add to them from the Rules screen in
 the UI; this table is what a fresh install actually enforces.
 
@@ -94,7 +94,7 @@ the UI; this table is what a fresh install actually enforces.
 and `request_secret` — reach the gateway fully namespaced as `mcp__<server>__<tool>` (a live turn
 records a click as `mcp__browser__browser_click`). Tool patterns are anchored, so `ruleMatches`
 tests each pattern against **both** the namespaced and the bare name (`toolNameAliases` in
-`packages/server/src/permissions/rules.ts`). Without that normalization the three rules below that
+`daemon/src/permissions/rules.ts`). Without that normalization the three rules below that
 name MCP tools could never match, and the consequential-click and credential-typing gates would be
 silently dead. Both `require` and `allow` rules are normalized the same way, so this cannot turn a
 blocked action into an allowed one — `require` still wins.
@@ -133,7 +133,7 @@ Two things worth calling out explicitly:
 
 ## Secrets
 
-`packages/server/src/permissions/secrets.ts` implements a keychain-backed secret store:
+`daemon/src/permissions/secrets.ts` implements a keychain-backed secret store:
 
 - On macOS, values go through the system Keychain (`security add-generic-password` /
   `find-generic-password`).
@@ -164,7 +164,7 @@ The daemon never holds Anthropic API credentials itself. The Agent SDK spawns th
 subprocess for every turn, and that subprocess authenticates using your existing `claude` login
 (`~/.claude`) — a Pro/Max subscription, not a metered API key.
 
-`buildEnv()` in `packages/server/src/agent/session.ts` enforces this at the subprocess boundary:
+`buildEnv()` in `daemon/src/agent/session.ts` enforces this at the subprocess boundary:
 
 ```ts
 export function buildEnv(settings: Settings, base = process.env) {

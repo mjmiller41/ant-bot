@@ -13,7 +13,7 @@ document is about writing and installing the skill itself.
 ## The six-section shape
 
 Every skill body follows the same six sections, in this order (`SKILL_TEMPLATE` in
-`packages/server/src/skills/skills.ts`):
+`daemon/src/skills/skills.ts`):
 
 1. **When to use it** — the trigger. What request or situation should make a Bot reach for this
    skill instead of improvising? Specific enough that a Bot with the skill enabled recognizes the
@@ -41,12 +41,12 @@ Every skill body follows the same six sections, in this order (`SKILL_TEMPLATE` 
 
 A skill is a directory containing one file, `SKILL.md`, under the skills directory
 (`~/.ant-bot/skills/skills/<slug>/SKILL.md`). The extra level is not a typo: `paths.skills`
-(`packages/server/src/config/paths.ts`) is the root of a **local plugin** — it holds a generated
+(`daemon/src/config/paths.ts`) is the root of a **local plugin** — it holds a generated
 `.claude-plugin/plugin.json` and a `skills/` subdirectory of actual skills. Loading skills as a
 plugin is what gives Bots the agent SDK's real `Skill` tool rather than a list of paths to read.
 A skill can also live in the ant-bot project's own `skills/` directory, which is installed on
 every boot; see `skills/README.md`. The file is YAML-ish frontmatter followed by the markdown
-body, parsed by `parseFrontmatter()` in `packages/server/src/skills/skills.ts`:
+body, parsed by `parseFrontmatter()` in `daemon/src/skills/skills.ts`:
 
 ```markdown
 ---
@@ -110,7 +110,7 @@ PUT /api/bots/:id/skills   { skillIds: string[] }  → replaces the enabled set
 ```
 
 In the UI this is the skills section of Bot Settings. Only a Bot's enabled skills are injected
-into its system prompt (`buildSystemPrompt()` in `packages/server/src/bots/prompt.ts`, driven by
+into its system prompt (`buildSystemPrompt()` in `daemon/src/bots/prompt.ts`, driven by
 `store.listBotSkills(bot.id)`):
 
 ```
@@ -127,7 +127,7 @@ a file, not pre-loaded into every turn's context.
 
 Typing `/` at the start of a message in the composer opens a picker over the current skill list
 (matched by slug or name), and selecting one inserts `/<slug> ` into the message
-(`packages/web/src/components/Composer.tsx`). This is purely a convenience for naming the skill
+(`ui/src/components/Composer.tsx`). This is purely a convenience for naming the skill
 you want used in your instruction to the Bot — it is client-side text insertion, not a structured
 token the server resolves specially. The picker lists every skill known to the account, not only
 the ones enabled for the Bot you're messaging; if you reference a skill the Bot doesn't have
