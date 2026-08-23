@@ -100,6 +100,7 @@ export async function createBackup(opts: CreateBackupOptions): Promise<CreateBac
   } catch (err) {
     throw new Error(
       `Could not run "tar": ${(err as Error).message}. Is tar installed and on PATH?`,
+      { cause: err },
     );
   }
   if (res.code !== 0) {
@@ -128,6 +129,7 @@ export async function restoreBackup(opts: RestoreBackupOptions): Promise<void> {
   } catch (err) {
     throw new Error(
       `Could not run "tar": ${(err as Error).message}. Is tar installed and on PATH?`,
+      { cause: err },
     );
   }
   if (res.code !== 0) {

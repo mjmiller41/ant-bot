@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint · typecheck · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Must precede setup-node so its `cache: pnpm` can find the store.
+      # No version pinned here: pnpm/action-setup reads `packageManager` from package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # `prepare` runs `pnpm build`, so this also proves every package compiles.
+      - name: Install and build
+        run: pnpm install --frozen-lockfile
+
+      # packages/server/src/computer/browser.test.ts guards its live-browser suite with
+      # `describe.skipIf(!hasChromium)`. Without this the suite silently skips and CI
+      # reports green over untested code.
+      - name: Install Chromium for the live browser tests
+        run: pnpm --filter @antbot/server exec playwright install --with-deps chromium
+
+      # Each check reports independently — one failure should not hide the others.
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: pnpm lint
+
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: pnpm typecheck
+
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: pnpm test
+
+# Not run here: `pnpm e2e`. The Playwright specs in packages/web/e2e drive a live daemon
+# with a real `claude` login, which spends subscription tokens and needs credentials CI
+# does not have. Run those locally against a daemon you started yourself.

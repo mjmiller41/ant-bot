@@ -58,9 +58,9 @@ export function ComputerView() {
   if (!status.available) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-sm font-medium">The agent computer isn't available right now.</p>
+        <p className="text-sm font-medium">The agent computer isn&apos;t available right now.</p>
         <p className="max-w-sm text-xs text-(--color-text-muted)">
-          Bots can still browse the web and use tools — you just won't see a live screencast until the computer
+          Bots can still browse the web and use tools — you just won&apos;t see a live screencast until the computer
           service starts.
         </p>
       </div>

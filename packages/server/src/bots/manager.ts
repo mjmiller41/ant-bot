@@ -120,7 +120,6 @@ export class BotManager {
   /** Custom tools exposed to every bot turn: handoff, memory, secrets-safe helpers. */
   private buildToolServer(bot: Bot, threadId: string, hops: number) {
     const { store, workspace } = this.deps;
-    const self = this;
     return createSdkMcpServer({
       name: 'antbot',
       version: '1.0.0',
@@ -132,12 +131,12 @@ export class BotManager {
           async (args: { bot_slug: string; message: string }) => {
             const target = store.getBotBySlug(args.bot_slug);
             if (!target) return { content: [{ type: 'text' as const, text: `No bot with slug "${args.bot_slug}". Use one of: ${store.listBots().map((b) => b.slug).join(', ')}` }] };
-            if (target.id === bot.id) return { content: [{ type: 'text' as const, text: 'You cannot hand work to yourself.' }] };
+            if (target.id === bot.id) return { content: [{ type: 'text' as const, text: 'You cannot hand work to yourthis.' }] };
             if (hops + 1 > LIMITS.MAX_BOT_TO_BOT_HOPS)
               return { content: [{ type: 'text' as const, text: `Hop limit of ${LIMITS.MAX_BOT_TO_BOT_HOPS} reached. Stop and report back to the human instead.` }] };
             store.createMail({ fromBotId: bot.id, toBotId: target.id, contentMd: args.message, hops: hops + 1 });
-            self.postSystemCard(threadId, bot.id, { type: 'handoff', fromBotId: bot.id, toBotId: target.id, note: args.message.slice(0, 300) });
-            self.enqueue({
+            this.postSystemCard(threadId, bot.id, { type: 'handoff', fromBotId: bot.id, toBotId: target.id, note: args.message.slice(0, 300) });
+            this.enqueue({
               botId: target.id, threadId: target.threadId!, origin: 'bot', hops: hops + 1,
               prompt: `**Handoff from @${bot.slug} (${bot.name}):**\n\n${args.message}\n\n---\nHandle this, then reply. If it belongs to someone else, say so rather than guessing.`,
             });
@@ -161,7 +160,7 @@ export class BotManager {
             'something that may already be present, and to find the exact slug to pass to remove_skill.',
           {},
           async () => {
-            const skills = self.deps.listSkills?.() ?? [];
+            const skills = this.deps.listSkills?.() ?? [];
             if (!skills.length)
               return { content: [{ type: 'text' as const, text: 'No skills are installed.' }] };
             const lines = skills.map((sk) => `- ${sk.slug} — ${sk.name}${sk.description ? `: ${sk.description}` : ''}`);
@@ -190,10 +189,10 @@ export class BotManager {
               .describe('set true only when the human has asked for every skill in a multi-skill source'),
           },
           async (args: { source: string; reason: string; install_all?: boolean }) => {
-            if (!self.deps.installSkill)
+            if (!this.deps.installSkill)
               return { content: [{ type: 'text' as const, text: 'Skill installation is unavailable on this server.' }] };
             try {
-              const installed = await self.deps.installSkill(args.source, { allowMultiple: args.install_all === true });
+              const installed = await this.deps.installSkill(args.source, { allowMultiple: args.install_all === true });
               if (!installed.length)
                 return { content: [{ type: 'text' as const, text: `No skill found at "${args.source}".` }] };
               const names = installed.map((i) => i.name).join(', ');
@@ -238,12 +237,12 @@ export class BotManager {
             reason: z.string().describe('why this skill should be removed'),
           },
           async (args: { slug: string; reason: string }) => {
-            if (!self.deps.removeSkill)
+            if (!this.deps.removeSkill)
               return { content: [{ type: 'text' as const, text: 'Skill removal is unavailable on this server.' }] };
             try {
-              const res = await self.deps.removeSkill(args.slug);
+              const res = await this.deps.removeSkill(args.slug);
               if (!res.removed) {
-                const known = (self.deps.listSkills?.() ?? []).map((sk) => sk.slug).join(', ');
+                const known = (this.deps.listSkills?.() ?? []).map((sk) => sk.slug).join(', ');
                 return { content: [{ type: 'text' as const, text: `No skill with slug "${args.slug}". Installed: ${known || 'none'}.` }] };
               }
               return { content: [{ type: 'text' as const, text: `Removed "${args.slug}"${res.name ? ` (${res.name})` : ''}.` }] };
@@ -257,7 +256,7 @@ export class BotManager {
           'Ask the human for a secret value (API key, token). The value goes straight to the keychain and is never shown to you. Never ask for passwords in chat — ask for computer takeover instead.',
           { name: z.string().describe('identifier, e.g. STRIPE_API_KEY'), reason: z.string() },
           async (args: { name: string; reason: string }) => {
-            self.deps.bus.publish({ type: 'secret.request', botId: bot.id, threadId, requestId: newId(), name: args.name, reason: args.reason });
+            this.deps.bus.publish({ type: 'secret.request', botId: bot.id, threadId, requestId: newId(), name: args.name, reason: args.reason });
             return { content: [{ type: 'text' as const, text: `Asked the human for "${args.name}". It will be injected into your environment as that variable name; you will never see the value. Continue once they confirm.` }] };
           },
         ),

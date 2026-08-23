@@ -22,9 +22,17 @@ pnpm e2e                # Playwright, needs a live daemon on :4780
 ./antbot doctor|start|stop|status|open|skill|backup|restore
 ```
 
-**`pnpm lint` is broken** — the root script invokes ESLint 9 but there is no `eslint.config.js`
-anywhere. It exits 2 every time. There is also no Prettier config and no CI workflow. Your gate is
-`pnpm typecheck && pnpm test`; run both before claiming done.
+Your gate is `pnpm lint && pnpm typecheck && pnpm test`; run all three before claiming done.
+`.github/workflows/ci.yml` runs exactly those on every push to `main` and every PR, each as its
+own step so one failure does not mask the others. There is still no Prettier config — formatting
+is not enforced, so match the surrounding file rather than reformatting it.
+
+**Lint is a second opinion, not a formatter.** `eslint.config.js` is flat config on ESLint 9
+(note: `--ext` no longer exists — the config decides which files are linted). The type-aware
+tseslint presets are deliberately off, since `pnpm typecheck` already covers that ground. Where a
+rule fights a deliberate choice here it is disabled *in the config, with the reason written down*
+— `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
+back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
 Baseline as of this checkout: **build clean, typecheck clean, 27 test files / 475 tests passing**
 (shared 19, server 349, web 49, cli 58). The table in `README.md` says 437/26 and is stale — if you
@@ -175,9 +183,9 @@ and `packages/shared` together.
   every open. Adding or changing a column will *not* apply to an existing `~/.ant-bot/antbot.db`.
   Any schema change needs an explicit migration path written alongside it. (The plan doc mentions
   `db/migrations/`; it does not exist.)
-- **`PermissionGateway.seedBuiltins()` (the static method) is dead and would throw** — it calls
-  CommonJS `require()` inside an ESM module. The live path is `seedBuiltinRules(store)` from
-  `rules.ts`, called by `app.ts`. Don't call the static; consider deleting it.
+- **Rule seeding lives in `seedBuiltinRules(store)` in `rules.ts`**, called once from `app.ts`.
+  (A dead `PermissionGateway.seedBuiltins()` static used to shadow it — it called CommonJS
+  `require()` from an ESM module and would have thrown if anything had ever invoked it. Deleted.)
 - **Optional subsystems fail silently.** `app.ts` loads skills, browser and scheduler through
   `optionalImport()` inside `try/catch`, so a throw during wiring degrades to
   `log.warn('... subsystem unavailable')` and the daemon boots without it. When a feature "does

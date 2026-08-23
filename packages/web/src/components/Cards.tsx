@@ -127,8 +127,8 @@ export function CardView({ card }: { card: Card }) {
       return <ErrorCard card={card} />;
     default: {
       const _exhaustive: never = card;
-      return null;
       void _exhaustive;
+      return null;
     }
   }
 }
@@ -138,6 +138,8 @@ export function CardList({ cards }: { cards: Card[] }) {
   return (
     <div className="mt-2 flex flex-col gap-2">
       {cards.map((card, i) => (
+        // Cards are append-only and the server addresses updates by position
+        // (`message.card` carries `cardIndex`), so the index IS the stable identity.
         // eslint-disable-next-line react/no-array-index-key
         <CardView key={i} card={card} />
       ))}

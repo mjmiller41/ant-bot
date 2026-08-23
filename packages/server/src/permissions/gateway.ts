@@ -90,7 +90,7 @@ export class PermissionGateway {
     /** Fired when a human approval card is created, so the caller can render it inline. */
     onPending?: (approval: Approval) => void;
   }): Promise<GatewayDecision> {
-    const { botId, threadId, toolName, input, settings } = args;
+    const { toolName, input, settings } = args;
     const rules = this.store.listRules(true);
     const decision = evaluateRules(rules, toolName, input);
 
@@ -232,17 +232,6 @@ export class PermissionGateway {
       this.pending.delete(id);
       this.store.resolveApproval(id, 'denied', 'user', null, 'Turn interrupted');
       p.resolve({ behavior: 'deny', message: 'Interrupted.', via: 'user' });
-    }
-  }
-
-  /** Seed the builtin rule set once. */
-  static seedBuiltins(store: Store): void {
-    if (store.listRules().some((r) => r.builtin)) return;
-    // lazily imported to keep this file's surface small
-    const { BUILTIN_RULES } = require('./rules.js') as typeof import('./rules.js');
-    for (const r of BUILTIN_RULES) {
-      const rule = store.createRule(r);
-      if (!r.enabled) store.setRuleEnabled(rule.id, false);
     }
   }
 }

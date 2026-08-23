@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import type { RosterEntry, Skill, Attachment } from '@antbot/shared';
 import { LIMITS } from '@antbot/shared';
 import { api } from '../api/client.js';
@@ -29,8 +29,14 @@ export function Composer({ onSend, bots, skills, running, onStop, uploadFile }: 
   const [token, setToken] = useState<{ prefix: '@' | '/'; query: string; start: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Mirrors attachments.length so a second addFiles() in the same tick sees the slots
+  // the first one already reserved, before any re-render lands. Synced from an effect
+  // rather than during render — writing a ref while rendering breaks under StrictMode
+  // and concurrent rendering.
   const attachmentsLenRef = useRef(0);
-  attachmentsLenRef.current = attachments.length;
+  useEffect(() => {
+    attachmentsLenRef.current = attachments.length;
+  }, [attachments.length]);
 
   const doUpload = useMemo(() => uploadFile ?? ((file: File) => api.attachments.upload(file)), [uploadFile]);
 
