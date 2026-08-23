@@ -4,6 +4,11 @@ import type {
   Approval,
   Rule,
   Skill,
+  Connector,
+  ApiConnector,
+  ConnectorProbeResult,
+  CreateConnectorRequest,
+  UpdateConnectorRequest,
   Routine,
   RoutineRun,
   Attachment,
@@ -87,6 +92,11 @@ export const api = {
       set: (id: string, skillIds: string[]) =>
         request<{ ok: true }>(`/bots/${id}/skills`, { method: 'PUT', ...json({ skillIds }) }),
     },
+    connectors: {
+      get: (id: string) => request<Connector[]>(`/bots/${id}/connectors`),
+      set: (id: string, connectorIds: string[]) =>
+        request<{ ok: true }>(`/bots/${id}/connectors`, { method: 'PUT', ...json({ connectorIds }) }),
+    },
     stop: (id: string) => request<{ stopped: boolean }>(`/bots/${id}/stop`, { method: 'POST' }),
   },
 
@@ -121,6 +131,21 @@ export const api = {
       request<Skill>('/skills', { method: 'POST', ...json(body) }),
     get: (id: string) => request<Skill & { bodyMd: string }>(`/skills/${id}`),
     remove: (id: string) => request<{ ok: true }>(`/skills/${id}`, { method: 'DELETE' }),
+  },
+
+  secrets: {
+    /** Names only — the API never returns a secret value, so neither can the UI show one. */
+    list: () => request<{ backend: string; names: string[] }>('/secrets'),
+  },
+
+  connectors: {
+    list: () => request<ApiConnector[]>('/connectors'),
+    create: (body: CreateConnectorRequest) =>
+      request<Connector>('/connectors', { method: 'POST', ...json(body) }),
+    update: (id: string, body: UpdateConnectorRequest) =>
+      request<Connector>(`/connectors/${id}`, { method: 'PATCH', ...json(body) }),
+    remove: (id: string) => request<{ ok: true }>(`/connectors/${id}`, { method: 'DELETE' }),
+    test: (id: string) => request<ConnectorProbeResult>(`/connectors/${id}/test`, { method: 'POST', ...json({}) }),
   },
 
   routines: {

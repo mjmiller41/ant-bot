@@ -8,6 +8,7 @@ export const KNOWN_COMMANDS = [
   'doctor',
   'open',
   'skill',
+  'connector',
   'backup',
   'restore',
   'update',
@@ -41,6 +42,7 @@ export const COMMAND_FLAGS: Record<Command, FlagSpecs> = {
   doctor: {},
   open: {},
   skill: {},
+  connector: {},
   backup: {
     out: { type: 'string' },
   },
@@ -52,6 +54,16 @@ export const COMMAND_FLAGS: Record<Command, FlagSpecs> = {
     yes: { type: 'boolean', default: false },
   },
 };
+
+/**
+ * Commands that own their own argument grammar. Their tokens are passed through verbatim as
+ * positionals instead of being flag-parsed here.
+ *
+ * `connector` needs this because `--env K=V` and `--header K=V` repeat, which this parser's
+ * one-value-per-flag model cannot represent. `--help` is still intercepted, so there is one
+ * source of help text (help.ts) rather than two that drift.
+ */
+const PASSTHROUGH_COMMANDS = new Set<Command>(['connector']);
 
 export interface ParsedArgs {
   command: Command | null;
@@ -109,6 +121,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
     if (tok === '--help' || tok === '-h') {
       help = true;
+      continue;
+    }
+
+    if (PASSTHROUGH_COMMANDS.has(command)) {
+      positionals.push(tok);
       continue;
     }
 

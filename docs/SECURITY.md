@@ -131,6 +131,41 @@ Two things worth calling out explicitly:
   gated by default; enable this rule from the Rules screen if you want every handoff to require a
   human nod.
 
+## Connectors (MCP servers)
+
+A connector is a third-party MCP server. Four things decide what one can do:
+
+**Assignment is the permission.** A connector is registered account-wide but mounted only for
+bots it is assigned to, per turn. A bot with no assignment never sees the server at all — not a
+denied tool, an absent one. Disabling a connector takes it away from every bot at once.
+
+**Tools are gated like any other tool.** They reach the gateway as `mcp__<name>__<tool>` and hit
+the same evaluation order. No rule ships for them, so the first call falls through to
+"No rule covers this action" and asks you. Two caveats worth knowing:
+
+- *Auto-review can allow one.* When no `require` rule matches, auto-review (Haiku) may return
+  `allow_ok` and the call proceeds without asking. For a connector that can spend money, publish,
+  or delete, write an explicit rule: `require` on `mcp__<name>__*`.
+- *Write rules fully qualified.* `toolNameAliases()` matches both `mcp__github__create_issue` and
+  the bare `create_issue`, so an allow rule written against a bare name matches that tool name on
+  **every** server — including a connector added later. Prefer `mcp__<name>__<tool>` patterns.
+
+**The workspace boundary does not see them.** `local.ts` inspects `Read`/`Write`/`Edit`/`Bash`
+arguments for paths. A connector that touches the filesystem or the network does so outside that
+check. The boundary constrains what a *bot* does directly, not what a server you mounted does on
+its behalf.
+
+**Credentials.** A connector's stored config holds `{{secret:NAME}}` references, never values.
+The daemon resolves them from the keychain at mount time, and the value exists only in the
+subprocess environment or the outbound request headers — never in the database, an API response,
+a log line, the transcript, or the model's context. A reference with nothing behind it means the
+connector is skipped for that turn rather than mounted half-configured.
+
+The honest limit: the value does reach the connector's own process. A malicious or compromised
+MCP server can exfiltrate the credentials you gave it, exactly as it could if you exported them
+into a shell and ran the same program. Only mount servers you would trust with the token, and
+give each connector its own least-privileged credential.
+
 ## Secrets
 
 `daemon/src/permissions/secrets.ts` implements a keychain-backed secret store:

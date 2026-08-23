@@ -57,6 +57,13 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 | GET | `/api/computer/status` | – | `{ available: boolean, mode, pages: {botId,url,title}[] }` |
 | POST | `/api/computer/takeover` | `{ botId }` | `{ ok: boolean, message: string }` |
 | DELETE | `/api/computer/takeover` | `{ botId }` | `{ ok: true }` |
+| GET | `/api/connectors` | – | `ApiConnector[]` (`Connector` + `missingSecrets: string[]`) |
+| POST | `/api/connectors` | `CreateConnectorRequest` | `Connector`; 409 if the name is taken |
+| PATCH | `/api/connectors/:id` | `UpdateConnectorRequest` | `Connector` (no rename — see below) |
+| DELETE | `/api/connectors/:id` | – | `{ ok: true }`; also drops every bot's assignment |
+| POST | `/api/connectors/:id/test` | – | `ConnectorProbeResult` `{ok, tools[], error?}` |
+| GET | `/api/bots/:id/connectors` | – | `Connector[]` assigned to this bot |
+| PUT | `/api/bots/:id/connectors` | `{ connectorIds: string[] }` | `{ ok: true }` |
 
 ## WebSocket
 
@@ -87,6 +94,22 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 
 `ServerEvent` union is defined in `@antbot/contract/events.ts`. Every event carries
 `seq`, `threadId` (nullable), `botId` (nullable).
+
+## Connectors
+
+A connector is an MCP server registered once for the account and assigned per bot. Assignment is
+the permission: a bot with no assignment never has the server mounted, so its tools do not exist
+for that bot. Its tools reach the gateway as `mcp__<name>__<tool>` and are subject to rules like
+any other tool.
+
+- **Names** match `^[a-z0-9][a-z0-9-]{0,31}$`, and `antbot` / `browser` are reserved. Underscores
+  are rejected because `toolNameAliases()` splits `mcp__<name>__<tool>` on the first `__` pair.
+- **No rename.** `PATCH` cannot change a name: the name is part of every tool name a rule may
+  already match, so renaming would silently orphan those rules. Delete and re-add.
+- **Secrets are references, never values.** An env value or header may contain `{{secret:NAME}}`;
+  the daemon substitutes it from the keychain when the server is mounted. Stored rows, every
+  response above, and `POST /:id/test` carry only the reference. `missingSecrets` lists references
+  with nothing behind them — such a connector is skipped at turn time rather than failing the turn.
 
 ## Static
 

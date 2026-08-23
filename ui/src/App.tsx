@@ -13,15 +13,17 @@ import { UsageScreen } from './components/UsageScreen.js';
 import { SettingsScreen } from './components/SettingsScreen.js';
 import { WorkspaceBrowser } from './components/WorkspaceBrowser.js';
 import { ComputerView } from './components/ComputerView.js';
+import { ConnectorsScreen } from './components/ConnectorsScreen.js';
 import { CommandPalette, type PaletteTarget } from './components/CommandPalette.js';
 
-type View = 'thread' | 'rules' | 'usage' | 'settings' | 'workspace' | 'computer';
+type View = 'thread' | 'rules' | 'connectors' | 'usage' | 'settings' | 'workspace' | 'computer';
 
 const NAV_ITEMS: { view: View; label: string }[] = [
   { view: 'thread', label: 'Chats' },
   { view: 'workspace', label: 'Workspace' },
   { view: 'computer', label: 'Computer' },
   { view: 'rules', label: 'Rules' },
+  { view: 'connectors', label: 'Connectors' },
   { view: 'usage', label: 'Usage' },
   { view: 'settings', label: 'Settings' },
 ];
@@ -315,6 +317,11 @@ export default function App() {
           {view === 'rules' && (
             <ScrollPane>
               <RulesScreen />
+            </ScrollPane>
+          )}
+          {view === 'connectors' && (
+            <ScrollPane>
+              <ConnectorsScreen />
             </ScrollPane>
           )}
           {view === 'usage' && (

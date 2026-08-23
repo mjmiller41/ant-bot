@@ -7,7 +7,7 @@ your approval before doing anything consequential.
 
 This guide covers everything the application does. It is written against the current source; where
 a control exists in the UI but is not yet wired to behaviour, that is stated plainly in
-[Known limitations](#22-known-limitations) rather than glossed over.
+[Known limitations](#23-known-limitations) rather than glossed over.
 
 **Related documents**
 
@@ -32,18 +32,19 @@ a control exists in the UI but is not yet wired to behaviour, that is stated pla
 8. [Rules](#8-rules)
 9. [Memory](#9-memory)
 10. [Skills](#10-skills)
-11. [Routines (scheduling)](#11-routines-scheduling)
-12. [Bot-to-bot handoffs](#12-bot-to-bot-handoffs)
-13. [The Computer (browser)](#13-the-computer-browser)
-14. [Secrets](#14-secrets)
-15. [The Workspace](#15-the-workspace)
-16. [Usage](#16-usage)
-17. [Settings reference](#17-settings-reference)
-18. [Files, ports, and environment](#18-files-ports-and-environment)
-19. [Backup and restore](#19-backup-and-restore)
-20. [Limits](#20-limits)
-21. [Troubleshooting](#21-troubleshooting)
-22. [Known limitations](#22-known-limitations)
+11. [Connectors (MCP servers)](#11-connectors-mcp-servers)
+12. [Routines (scheduling)](#12-routines-scheduling)
+13. [Bot-to-bot handoffs](#13-bot-to-bot-handoffs)
+14. [The Computer (browser)](#14-the-computer-browser)
+15. [Secrets](#15-secrets)
+16. [The Workspace](#16-the-workspace)
+17. [Usage](#17-usage)
+18. [Settings reference](#18-settings-reference)
+19. [Files, ports, and environment](#19-files-ports-and-environment)
+20. [Backup and restore](#20-backup-and-restore)
+21. [Limits](#21-limits)
+22. [Troubleshooting](#22-troubleshooting)
+23. [Known limitations](#23-known-limitations)
 
 ---
 
@@ -72,7 +73,7 @@ approve/deny prompt), `handoff` (work passed to another Bot), and `error`.
 **Skill** — a reusable written procedure a Bot can follow. See [section 10](#10-skills).
 
 **Routine** — a schedule that fires an instruction at a Bot on a cron expression. See
-[section 11](#11-routines-scheduling).
+[section 12](#12-routines-scheduling).
 
 **Memory** — durable markdown notes a Bot carries into every turn. See [section 9](#9-memory).
 
@@ -370,7 +371,7 @@ Delete the files yourself if you want them gone.
 
 **Memory** — see [section 9](#9-memory).
 **Skills** — see [section 10](#10-skills).
-**Routines** — see [section 11](#11-routines-scheduling).
+**Routines** — see [section 12](#12-routines-scheduling).
 
 ### Stopping a Bot
 
@@ -441,7 +442,7 @@ who should take the next step, and to keep replies short.
 
 > **Note:** there is currently no button to create a group thread. Existing groups render in the
 > sidebar and work fully, but creating one requires the API — see
-> [Known limitations](#22-known-limitations).
+> [Known limitations](#23-known-limitations).
 
 ---
 
@@ -807,7 +808,7 @@ it as a trigger ("Use this when…"), not a title. Multi-line YAML (`description
 
 To install what you have written: `antbot skill add ./path/to/my-skill`, or drop it in the
 project's `skills/` directory. There is no skill editor in the UI (see
-[Known limitations](#22-known-limitations)).
+[Known limitations](#23-known-limitations)).
 
 The **What requires approval** section should never be empty. Note that it is a documentation
 convention the model follows — the thing that actually *blocks* an action is a require-rule in the
@@ -815,7 +816,65 @@ Permission Gateway. The two are complementary, not the same mechanism.
 
 ---
 
-## 11. Routines (scheduling)
+## 11. Connectors (MCP servers)
+
+A **connector** is an external MCP server — GitHub, a filesystem server, something internal — that
+gives Bots real tools instead of making them drive a website. You register one once for the
+account, then decide which Bots may use it.
+
+### Adding one
+
+Open **Connectors** in the sidebar, or use the CLI:
+
+```bash
+antbot connector add fs --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp/demo"
+antbot connector test fs        # connect and list the tools it offers
+antbot connector list
+```
+
+Two transports: `--stdio "<command>"` runs a local program, `--url <url>` talks to a remote server
+over HTTP (add `--transport sse` for an SSE endpoint). Names are lowercase letters, digits and
+hyphens; `antbot` and `browser` are reserved for the built-in tools.
+
+### Giving a Bot access
+
+**Assignment is the permission.** Open a Bot's settings, tick the connector under **Connectors**,
+and save. A Bot that has not been given a connector cannot see its tools at all — they are not
+denied, they are absent. Disabling a connector switches it off for every Bot at once.
+
+A Bot's connector tools appear as `mcp__<connector>__<tool>` and pass the permission gateway like
+anything else, so the first call raises an approval card. Once you trust one, add an allow rule
+for it — write the full `mcp__<connector>__<tool>` form rather than the bare tool name (see
+[section 8](#8-rules)).
+
+### Credentials
+
+Most useful connectors need an API key. Store it as a secret, then reference it by name:
+
+```bash
+antbot connector add gh --url https://api.example.com/mcp \
+  --header "Authorization=Bearer {{secret:GH_TOKEN}}"
+```
+
+`{{secret:NAME}}` works in any `--env` value (stdio) or `--header` value (http/sse), including in
+the middle of a longer string. ant-bot stores the *reference*; the daemon substitutes the value
+from your keychain when the server starts. The value never appears in the database, the API, the
+Bot's context, or a log.
+
+If a referenced secret does not exist, the Connectors screen flags it and the connector is simply
+not mounted — the Bot's turn still runs, without that connector. `antbot connector list` shows the
+same warning.
+
+### What a connector can do
+
+A connector runs with whatever credential you gave it, in its own process. ant-bot's workspace
+boundary does not apply to it: it constrains what a Bot does directly, not what a server you
+mounted does on the Bot's behalf. Mount servers you would trust with the token, and give each one
+its own least-privileged credential. See `docs/SECURITY.md`.
+
+---
+
+## 12. Routines (scheduling)
 
 A routine fires an instruction at one Bot on a cron schedule.
 
@@ -867,7 +926,7 @@ Limit: **50 routines per Bot**, **20 runs retained** per routine.
 
 ---
 
-## 12. Bot-to-bot handoffs
+## 13. Bot-to-bot handoffs
 
 A Bot can hand work to a teammate with its `send_to_bot` tool. Each Bot's system prompt lists its
 teammates by slug, with the instruction to hand off when a job genuinely belongs to that role and to
@@ -888,7 +947,7 @@ disabled. Enable it in the Rules tab if you want every handoff to stop and ask y
 
 ---
 
-## 13. The Computer (browser)
+## 14. The Computer (browser)
 
 Open the **Computer** tab. Bots share one Chromium browser with a persistent profile, each with its
 own page ("screen").
@@ -925,14 +984,14 @@ control** to give it back.
 > **Important:** ant-bot currently runs the browser headless, and the screencast is **view-only** —
 > it streams frames but does not forward your clicks or keystrokes. Takeover reliably *blocks the
 > Bot*, but there is no in-app way to complete the blocked step. See
-> [Known limitations](#22-known-limitations).
+> [Known limitations](#23-known-limitations).
 
 Screenshots a Bot takes are written into the workspace. They do **not** appear as cards in the
 thread — find them in the Workspace tab under `bots/<bot-id>/screenshots/`.
 
 ---
 
-## 14. Secrets
+## 15. Secrets
 
 Secrets are API keys and tokens that Bots need but must never see. Values go straight to your OS
 keychain; only *names* are ever returned by the API, and a value is never written to a transcript
@@ -948,7 +1007,7 @@ A Bot can ask for a secret with its `request_secret` tool, giving a name and a r
 > goes to your keychain, but nothing injects it into the Bot's environment — the code that would
 > build that overlay is never called. A Bot cannot currently use a stored secret. Treat this screen
 > as a keychain front-end, not a working credential path. See
-> [Known limitations](#22-known-limitations).
+> [Known limitations](#23-known-limitations).
 
 Secrets are currently managed through the API only:
 
@@ -973,7 +1032,7 @@ takeover, not a secret.
 
 ---
 
-## 15. The Workspace
+## 16. The Workspace
 
 Open the **Workspace** tab to browse the shared directory every Bot works in
 (`~/.ant-bot/workspace`).
@@ -1005,7 +1064,7 @@ validated server-side so a request cannot escape the workspace directory.
 
 ---
 
-## 16. Usage
+## 17. Usage
 
 Open the **Usage** tab.
 
@@ -1021,7 +1080,7 @@ Usage is recorded per turn from the SDK's reported token counts.
 
 ---
 
-## 17. Settings reference
+## 18. Settings reference
 
 Open the **Settings** tab. Changes save immediately — there is no Save button; a "Saving…"
 indicator appears briefly. Each setting is saved individually without disturbing the others.
@@ -1033,14 +1092,14 @@ indicator appears briefly. Each setting is saved individually without disturbing
 | **Auto-review** | on / off | on | Whether a `haiku` pass triages tool calls that no rule covers. On, routine low-risk calls proceed without bothering you. Off, **every** uncovered call becomes an approval — safer, far more interruptions. It can never override a require-rule either way. |
 | **Theme** | System / Light / Dark | System | Interface appearance. System follows your OS. |
 | **Local execution** | Ask / Always / Never | Ask | What happens when a tool call reaches outside the shared workspace — that is, touches your own machine. **Ask**: forces an approval, even past an allow-rule. **Always**: treats it like any other call. **Never**: denies it outright. Checked before rules, so a broad allow-rule cannot unlock it. See `docs/SECURITY.md` for what the Bash detection does and does not catch. |
-| **Daily token budget** | integer, 0 = unlimited | 0 | ⚠️ **Not enforced.** Stored and displayed, but no code reads it. See [Known limitations](#22-known-limitations). |
+| **Daily token budget** | integer, 0 = unlimited | 0 | ⚠️ **Not enforced.** Stored and displayed, but no code reads it. See [Known limitations](#23-known-limitations). |
 | **Desktop notifications** | on / off | on | ⚠️ **Not enforced.** There is no OS notification integration; in-app toasts appear regardless. |
 | **Billing mode** | Subscription / API (metered) | Subscription | **Subscription** strips `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the environment handed to every `claude` subprocess, so turns bill to your Claude login. **API** leaves them in place, and an ambient key means metered billing. Leave this on Subscription unless you specifically want to pay per token. |
 | **Computer mode** | Host / Container | Host | ⚠️ **Not enforced.** The browser always runs on the host. |
 
 ---
 
-## 18. Files, ports, and environment
+## 19. Files, ports, and environment
 
 ### Data directory
 
@@ -1093,7 +1152,7 @@ after a restart, and settings changed in the UI are never written back to this f
 
 ---
 
-## 19. Backup and restore
+## 20. Backup and restore
 
 ```bash
 antbot backup                              # → ~/.ant-bot/backups/antbot-backup-<timestamp>.tar.gz
@@ -1113,7 +1172,7 @@ over a running database is asking for trouble.
 
 ---
 
-## 20. Limits
+## 21. Limits
 
 | Limit | Value |
 | --- | --- |
@@ -1134,7 +1193,7 @@ failing vaguely.
 
 ---
 
-## 21. Troubleshooting
+## 22. Troubleshooting
 
 **`antbot status` says not running, but the UI works.** The PID file is stale. Status falls back to
 the health endpoint, so trust the UI. `antbot restart` clears it.
@@ -1151,7 +1210,7 @@ reason text — it says which.
 
 **A Bot cannot log into a site.** By design. Bots never handle passwords or 2FA codes. Use
 takeover on the Computer tab. Note the headless limitation in
-[Known limitations](#22-known-limitations).
+[Known limitations](#23-known-limitations).
 
 **`antbot doctor` fails on better-sqlite3.** Run `pnpm rebuild better-sqlite3`.
 
@@ -1173,15 +1232,19 @@ instruct Bots to report a failure rather than fall back on stale data.
 
 ---
 
-## 22. Known limitations
+## 23. Known limitations
 
 These are honest gaps in the current build, not things to work around.
 
-### Stored secrets never reach a Bot
+### Stored secrets reach connectors, but not a Bot's own shell
 
-You can add a secret and a Bot can request one, but nothing injects it into the Bot's environment —
-the overlay function that would do it is never called. A Bot therefore cannot use a stored secret
-today. The keychain storage itself works; only delivery is missing.
+A secret can now be handed to an MCP connector as `{{secret:NAME}}` (see
+[section 11](#11-connectors-mcp-servers)), and the daemon injects the value into that server's
+process. That is the only delivery path. Nothing injects a secret into the Bot's *own* environment,
+so a Bot cannot use one from `Bash` — and `request_secret` still only records the request.
+
+There is also no per-connector allowlist: a connector receives exactly the secrets its own config
+references, but nothing stops you referencing any stored secret from any connector.
 
 ### File cards are never emitted
 
@@ -1212,7 +1275,8 @@ first boot has no effect, and UI changes are never written back to it.
 - **Skills cannot be authored or installed from the UI.** Use `antbot skill add <source>`, the
   `/api/skills/install` endpoint, or the project's `skills/` directory. Assigning existing skills
   to Bots does work in the UI.
-- **Secrets have no screen.** Manage them with the API calls in [section 14](#14-secrets).
+- **Secrets have no screen.** Manage them with the API calls in [section 15](#15-secrets). The
+  Connectors screen offers stored secret *names* as completions, but cannot add or change one.
 - **The update check is command-line only.** `antbot status`, `antbot doctor` and `antbot update`
   report a newer version; Settings does not. Surfacing it in the UI needs a new API endpoint, and
   the HTTP contract is frozen (`docs/API-CONTRACT.md`) — so that is a deliberate decision someone

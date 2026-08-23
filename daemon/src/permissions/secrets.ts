@@ -158,7 +158,30 @@ export class SecretsService {
   }
   /** Names only — values are never returned to the API surface. */
   list(): string[] { return [...this.names]; }
-  /** Build an env overlay for a tool subprocess. Values never touch the transcript. */
+  /**
+   * Look up exactly the named secrets, for mounting a connector.
+   *
+   * Scoped on purpose. The unscoped `envOverlay()` below hands every stored secret to whatever
+   * asks; a connector should only ever see the ones its own config references, so that adding a
+   * third-party MCP server does not widen the blast radius of every other credential.
+   *
+   * A name with nothing behind it maps to null rather than being dropped, so the caller can tell
+   * "missing" from "empty string" and skip the connector instead of mounting it half-configured.
+   */
+  async resolve(names: string[]): Promise<Map<string, string | null>> {
+    const out = new Map<string, string | null>();
+    for (const n of new Set(names)) {
+      out.set(n, this.names.has(n) ? await this.backend.get(n) : null);
+    }
+    return out;
+  }
+
+  /**
+   * Build an env overlay for a tool subprocess. Values never touch the transcript.
+   *
+   * Unused, and unscoped — it returns every secret at once. `resolve()` above is what connectors
+   * use. Kept only because removing it is a separate decision; do not reach for it.
+   */
   async envOverlay(): Promise<Record<string, string>> {
     const out: Record<string, string> = {};
     for (const n of this.names) {

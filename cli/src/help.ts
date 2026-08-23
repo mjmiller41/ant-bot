@@ -18,6 +18,7 @@ Daemon:
 
 Data:
   skill <subcommand>   Manage the skills your bots can use
+  connector <subcmd>   Manage the MCP servers your bots can use
   backup [--out PATH]  Archive the database, config, skills, and bot memory
   restore <path>       Restore from a backup archive
 
@@ -141,6 +142,28 @@ live database handle and may be mid-turn.
 
 In a git checkout there is nothing for a package manager to update — use
 \`git pull && pnpm install\` instead.`,
+
+  connector: `antbot connector — manage the MCP servers your bots can use
+
+Usage: antbot connector <subcommand>
+
+  list                 Show every connector, with a warning for any missing secret
+  add <name> …         Add one: --stdio "<cmd>" or --url <url>
+  enable|disable <n>   Turn one on or off for every bot at once
+  remove <name>        Delete it, and every bot's assignment to it
+  test <name>          Connect and list the tools it offers
+
+A connector is an MCP server registered once for the account and then assigned to
+individual bots in Bot settings — a bot with no assignment cannot see its tools at
+all. Its tools reach bots as \`mcp__<name>__<tool>\` and pass the permission gateway
+like any other tool, so the first call asks you for approval.
+
+Credentials stay in the keychain: write {{secret:NAME}} in any --env or --header
+value and the daemon substitutes it when the connector is mounted.
+
+  antbot connector add fs --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp"
+  antbot connector add gh --url https://api.example.com/mcp \\
+    --header "Authorization=Bearer {{secret:GH_TOKEN}}"`,
 
   restore: `antbot restore — restore from a backup archive
 

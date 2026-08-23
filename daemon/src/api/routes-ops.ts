@@ -6,7 +6,10 @@ import { workspaceRelative } from '../app.js';
 import {
   ApprovalDecisionRequest, CreateRuleRequest, CreateRoutineRequest, CreateSkillRequest,
   SettingsPatchSchema, LimitError, type UsageSummary, type SearchResult,
+  CreateConnectorRequest, UpdateConnectorRequest,
 } from '@antbot/contract';
+import { computeMissingSecrets, extractSecretRefs, buildMcpServerConfig } from '../bots/connectors.js';
+import { probeConnector } from '../bots/mcpProbe.js';
 
 export function registerOpsRoutes(f: FastifyInstance, app: App): void {
   const { store, gateway, bus } = app;
@@ -48,6 +51,58 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
     if (rule.builtin) return reply.code(400).send({ error: 'Built-in rules cannot be deleted; disable it instead.' });
     store.deleteRule(rule.id);
     return { ok: true };
+  });
+
+  /* ---------------------------- connectors --------------------------- */
+  /** Secret values never appear here: rows hold `{{secret:NAME}}` references and nothing more. */
+  f.get('/api/connectors', async () => {
+    const available = new Set(app.secrets?.list() ?? []);
+    return store.listConnectors().map((c) => ({ ...c, missingSecrets: computeMissingSecrets(c, available) }));
+  });
+
+  f.post('/api/connectors', async (req, reply) => {
+    const parsed = CreateConnectorRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid body' });
+    if (store.getConnectorByName(parsed.data.name)) {
+      return reply.code(409).send({ error: `A connector named "${parsed.data.name}" already exists` });
+    }
+    return store.createConnector(parsed.data);
+  });
+
+  f.patch<{ Params: { id: string } }>('/api/connectors/:id', async (req, reply) => {
+    const parsed = UpdateConnectorRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body' });
+    const updated = store.updateConnector(req.params.id, parsed.data);
+    if (!updated) return reply.code(404).send({ error: 'No such connector' });
+    return updated;
+  });
+
+  f.delete<{ Params: { id: string } }>('/api/connectors/:id', async (req, reply) => {
+    if (!store.getConnector(req.params.id)) return reply.code(404).send({ error: 'No such connector' });
+    store.deleteConnector(req.params.id);
+    return { ok: true };
+  });
+
+  /**
+   * Connect to the server and list its tools. Secrets are resolved here, inside the daemon, and
+   * the response carries tool names and descriptions only — never the config they were put into.
+   */
+  f.post<{ Params: { id: string } }>('/api/connectors/:id/test', async (req, reply) => {
+    const connector = store.getConnector(req.params.id);
+    if (!connector) return reply.code(404).send({ error: 'No such connector' });
+    const refs = extractSecretRefs(connector.config);
+    const missing = computeMissingSecrets(connector, new Set(app.secrets?.list() ?? []));
+    if (missing.length) {
+      return { ok: false, tools: [], error: `missing secret(s): ${missing.join(', ')}` };
+    }
+    try {
+      const secrets = refs.length && app.secrets
+        ? await app.secrets.resolve(refs)
+        : new Map<string, string | null>();
+      return await probeConnector(buildMcpServerConfig(connector, secrets));
+    } catch (err) {
+      return { ok: false, tools: [], error: (err as Error).message };
+    }
   });
 
   /* ------------------------------ skills ----------------------------- */

@@ -1,0 +1,2 @@
+Server name: Gmail.
+Remote MCP server URL: https://gmailmcp.googleapis.com/mcp/v1

@@ -157,6 +157,65 @@ export const SkillSchema = z.object({
 });
 export type Skill = z.infer<typeof SkillSchema>;
 
+/* ------------------------------ MCP connectors ------------------------------ */
+
+/**
+ * Connector names become the middle segment of every tool name the model sees:
+ * `mcp__<name>__<tool>`. Underscores are banned outright because `toolNameAliases()`
+ * splits on the first `__` pair — a name containing one would make a connector's tools
+ * unmatchable by the rules that are supposed to gate them.
+ */
+export const CONNECTOR_NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/** Taken by the built-in servers; a connector using one would overwrite it in the turn's server map. */
+export const RESERVED_CONNECTOR_NAMES = ['antbot', 'browser'] as const;
+
+/**
+ * How to reach an MCP server. Mirrors the Agent SDK's own `McpServerConfig` minus the
+ * in-process `sdk` variant, which only the built-in servers use.
+ *
+ * Secret values are never stored here. An env value or header may embed `{{secret:NAME}}`,
+ * resolved against the keychain at mount time — see `daemon/src/bots/connectors.ts`.
+ */
+export const ConnectorConfigSchema = z.discriminatedUnion('transport', [
+  z.object({
+    transport: z.literal('stdio'),
+    command: z.string().min(1),
+    args: z.array(z.string()).default([]),
+    env: z.record(z.string(), z.string()).default({}),
+  }),
+  z.object({
+    transport: z.literal('http'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).default({}),
+    /** Optional allowlist passed through to the SDK. Omit to expose every tool the server offers. */
+    tools: z.array(z.string()).optional(),
+  }),
+  z.object({
+    transport: z.literal('sse'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).default({}),
+    tools: z.array(z.string()).optional(),
+  }),
+]);
+export type ConnectorConfig = z.infer<typeof ConnectorConfigSchema>;
+
+export const ConnectorSchema = z.object({
+  id: z.string(),
+  name: z
+    .string()
+    .regex(CONNECTOR_NAME_RE, 'lowercase letters, digits and hyphens only, max 32 characters')
+    .refine((n) => !(RESERVED_CONNECTOR_NAMES as readonly string[]).includes(n), {
+      message: `"antbot" and "browser" are reserved for the built-in servers`,
+    }),
+  description: z.string().default(''),
+  /** Account-wide switch. A disabled connector mounts for nobody, whatever the assignments say. */
+  enabled: z.boolean().default(true),
+  config: ConnectorConfigSchema,
+  createdAt: z.number(),
+});
+export type Connector = z.infer<typeof ConnectorSchema>;
+
 export const RoutineSchema = z.object({
   id: z.string(),
   botId: z.string(),

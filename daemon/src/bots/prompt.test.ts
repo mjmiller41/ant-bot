@@ -119,3 +119,35 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('anything you already did');
   });
 });
+
+describe('connectors block', () => {
+  const base = {
+    workspace: '/ws',
+    skills: [],
+    roster: [],
+    isGroup: false,
+  };
+  const bot = { id: 'b', slug: 'scout', name: 'Scout', title: '', description: '' } as never;
+
+  it('lists mounted connectors and points at the tool naming', () => {
+    const p = buildSystemPrompt({
+      ...base, bot,
+      connectors: [{ name: 'github', description: 'issues and PRs' }, { name: 'fs', description: '' }],
+    });
+    expect(p).toContain('## Your connectors');
+    expect(p).toContain('**github**: issues and PRs');
+    expect(p).toContain('**fs**');
+    expect(p).toContain('mcp__<connector>__<tool>');
+  });
+
+  // Absent, not empty: a bot with no connectors should not be told it has a connectors section.
+  it('omits the block entirely when nothing is mounted', () => {
+    expect(buildSystemPrompt({ ...base, bot, connectors: [] })).not.toContain('## Your connectors');
+    expect(buildSystemPrompt({ ...base, bot })).not.toContain('## Your connectors');
+  });
+
+  it('tells the bot to prefer a connector over the browser', () => {
+    const p = buildSystemPrompt({ ...base, bot, connectors: [{ name: 'gh', description: '' }] });
+    expect(p).toMatch(/Prefer a connector's tools over driving the\s+browser/);
+  });
+});

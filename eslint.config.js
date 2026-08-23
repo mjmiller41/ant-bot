@@ -107,6 +107,15 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 
+  // --- test fixtures: standalone node programs spawned by tests, not part of a package build ---
+  {
+    files: ['daemon/src/**/fixtures/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { ecmaVersion: 2023, sourceType: 'module' },
+    },
+  },
+
   // --- loose scripts: live smoke checks, run by hand against a real daemon ---
   {
     files: ['daemon/.smoke/**/*.mjs'],

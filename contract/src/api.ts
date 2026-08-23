@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   BotSchema, ThreadSchema, MessageSchema, ApprovalSchema, RuleSchema,
   SkillSchema, RoutineSchema, RoutineRunSchema, UsageRowSchema, ModelTierSchema,
+  ConnectorSchema, ConnectorConfigSchema, type Connector,
 } from './entities.js';
 
 export const CreateBotRequest = z.object({
@@ -70,6 +71,40 @@ export const CreateSkillRequest = z.object({
   source: z.enum(['user', 'taught', 'imported']).optional(),
 });
 export type CreateSkillRequest = z.infer<typeof CreateSkillRequest>;
+
+export const CreateConnectorRequest = z.object({
+  name: ConnectorSchema.shape.name,
+  description: z.string().default(''),
+  config: ConnectorConfigSchema,
+  enabled: z.boolean().optional(),
+});
+export type CreateConnectorRequest = z.infer<typeof CreateConnectorRequest>;
+
+/**
+ * No `name`: renaming a connector renames every tool the model and the rules see
+ * (`mcp__<name>__<tool>`), silently orphaning any rule written against the old one.
+ * Delete and re-add instead.
+ */
+export const UpdateConnectorRequest = z.object({
+  description: z.string().optional(),
+  config: ConnectorConfigSchema.optional(),
+  enabled: z.boolean().optional(),
+});
+export type UpdateConnectorRequest = z.infer<typeof UpdateConnectorRequest>;
+
+/**
+ * A connector as the API returns it. `missingSecrets` names the `{{secret:…}}` references
+ * that have nothing behind them — surfaced so a connector that will silently fail to mount
+ * says so in the UI before a turn runs, rather than going quiet at turn time.
+ */
+export type ApiConnector = Connector & { missingSecrets: string[] };
+
+/** What `POST /api/connectors/:id/test` reports. Tool names and descriptions only — never config. */
+export interface ConnectorProbeResult {
+  ok: boolean;
+  tools: { name: string; description: string }[];
+  error?: string;
+}
 
 /**
  * Field types, declared once and without defaults. `SettingsSchema` layers the

@@ -48,6 +48,15 @@ export interface ManagerDeps {
   /** Uninstall by slug. Gated by the `remove_skill` require-rule. */
   removeSkill?: (slug: string) => Promise<{ removed: boolean; name?: string }>;
   browserTools?: (botId: string) => ReturnType<typeof createSdkMcpServer> | undefined;
+  /**
+   * MCP connectors assigned to this bot, resolved and ready to mount. Async because mounting
+   * reads secrets from the keychain; returns what it could mount plus what to tell the model
+   * about, so a connector skipped for a missing credential simply is not there this turn.
+   */
+  connectorServers?: (botId: string) => Promise<{
+    servers: Record<string, unknown>;
+    mounted: { name: string; description: string }[];
+  }>;
 }
 
 export class BotManager {
@@ -290,8 +299,10 @@ export class BotManager {
     fs.mkdirSync(botDir, { recursive: true });
 
     const botSkills = store.listBotSkills(bot.id);
+    const connectors = await this.deps.connectorServers?.(bot.id);
     const systemPrompt = buildSystemPrompt({
       bot, workspace, skills: botSkills,
+      connectors: connectors?.mounted ?? [],
       roster: store.listBots().map((x) => ({ slug: x.slug, name: x.name, title: x.title })),
       isGroup,
     });
@@ -304,6 +315,9 @@ export class BotManager {
     const mcpServers: Record<string, any> = { antbot: this.buildToolServer(bot, job.threadId, job.hops) };
     const browser = this.deps.browserTools?.(bot.id);
     if (browser) mcpServers.browser = browser;
+    // Connector names are validated against RESERVED_CONNECTOR_NAMES, so this cannot clobber
+    // `antbot` or `browser` above.
+    if (connectors) Object.assign(mcpServers, connectors.servers);
 
     try {
       for await (const ev of runTurn({
@@ -460,6 +474,11 @@ export function summarizeTool(name: string, input: unknown): string {
   if (name.includes('list_skills')) return 'list installed skills';
   if (name.includes('remember')) return `memory: ${s('title')}`;
   if (name.startsWith('browser_') || name.includes('browser')) return [s('url'), s('selector'), s('text')].filter(Boolean).join(' ').slice(0, 160);
+  // A third-party connector's tool. Nothing is known about its arguments, but naming the server
+  // and the tool beats an approval card that reads as raw JSON. Matched last so the built-in
+  // servers above keep their own summaries.
+  const mcp = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(name);
+  if (mcp) return `${mcp[1]}: ${mcp[2]} ${JSON.stringify(input ?? {})}`.slice(0, 160);
   const j = JSON.stringify(input ?? {});
   return j.length > 160 ? `${j.slice(0, 160)}…` : j;
 }

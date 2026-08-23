@@ -5,6 +5,8 @@ export interface PromptContext {
   bot: Bot;
   workspace: string;
   skills: Skill[];
+  /** Connectors actually mounted this turn — a connector skipped for a missing secret is absent. */
+  connectors?: { name: string; description: string }[];
   roster: Array<{ slug: string; name: string; title: string }>;
   isGroup: boolean;
   groupMembers?: string[];
@@ -46,6 +48,13 @@ You share one computer with every other bot on this account.
     parts.push(`## Your skills
 ${ctx.skills.map((s) => `- **${s.name}** (${s.slug}): ${s.description}`).join('\n')}
 Read the skill file before following it.`);
+  }
+
+  if (ctx.connectors?.length) {
+    parts.push(`## Your connectors
+${ctx.connectors.map((c) => `- **${c.name}**${c.description ? `: ${c.description}` : ''}`).join('\n')}
+Their tools appear as \`mcp__<connector>__<tool>\`. Prefer a connector's tools over driving the
+browser for the same service — it is faster, and it does not depend on a page's layout.`);
   }
 
   const others = ctx.roster.filter((r) => r.slug !== bot.slug);

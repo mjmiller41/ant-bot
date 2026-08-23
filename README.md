@@ -14,6 +14,9 @@ subscription login rather than a metered `ANTHROPIC_API_KEY`.
   and a memory directory that survives daemon restarts.
 - **A shared computer** — one workspace directory, one persistent browser profile, one terminal;
   every Bot can reach what every other Bot can reach.
+- **Connectors** — attach an MCP server (GitHub, filesystem, your own) once, then assign it per Bot.
+  A Bot without the assignment cannot see its tools; credentials stay in the keychain as
+  `{{secret:NAME}}` references.
 - **Approvals** — every tool call a Bot proposes passes a Permission Gateway: deterministic rules,
   optional Haiku auto-review, or a human approval card in the thread.
 - **Skills** — standard Claude skills (`SKILL.md`), installed with `antbot skill add <source>` from
@@ -91,6 +94,7 @@ web assets. There's no separate frontend server to run.
 | `antbot restart` | Stop and start again |
 | `antbot status` | Whether it's running, on what port, with how many bots |
 | `antbot doctor` | Diagnose the environment; every failure prints its fix |
+| `antbot connector` | Manage the MCP servers your bots can use (`list`/`add`/`test`/`remove`) |
 | `antbot update` | Update to the latest published version (`--check` to look without installing) |
 
 Run `antbot --help` for the full list, or `antbot <command> --help` for one command.
@@ -275,11 +279,11 @@ Current totals, as run against this checkout:
 
 | Package | Test files | Tests |
 |---|---|---|
-| `@antbot/contract` | 1 | 22 |
-| `@antbot/daemon` | 20 | 471 |
-| `@antbot/ui` | 8 | 63 |
-| `@antbot/cli` | 7 | 116 |
-| **Total** | **36** | **672** |
+| `@antbot/contract` | 1 | 34 |
+| `@antbot/daemon` | 23 | 528 |
+| `@antbot/ui` | 9 | 80 |
+| `@antbot/cli` | 8 | 133 |
+| **Total** | **41** | **775** |
 
 ## Status / not built
 

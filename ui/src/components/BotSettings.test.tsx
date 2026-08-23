@@ -8,6 +8,15 @@ const getBotSkills = vi.fn();
 const setBotSkills = vi.fn();
 const listMemory = vi.fn();
 const listRoutines = vi.fn();
+const listConnectors = vi.fn();
+const getBotConnectors = vi.fn();
+const setBotConnectors = vi.fn();
+
+// The connectors panel renders alongside every other panel, so every test in this file calls
+// these. Defaults survive vi.clearAllMocks(), which clears calls but not implementations.
+listConnectors.mockResolvedValue([]);
+getBotConnectors.mockResolvedValue([]);
+setBotConnectors.mockResolvedValue({ ok: true });
 
 vi.mock('../api/client.js', () => ({
   ApiError: class ApiError extends Error {},
@@ -15,10 +24,12 @@ vi.mock('../api/client.js', () => ({
     skills: { list: () => listSkills() },
     bots: {
       skills: { get: (id: string) => getBotSkills(id), set: (id: string, ids: string[]) => setBotSkills(id, ids) },
+      connectors: { get: (id: string) => getBotConnectors(id), set: (id: string, ids: string[]) => setBotConnectors(id, ids) },
       memory: { list: () => listMemory() },
       update: vi.fn(),
     },
     routines: { list: () => listRoutines() },
+    connectors: { list: () => listConnectors() },
   },
 }));
 
@@ -176,5 +187,64 @@ describe('BotSettings — model tier picker', () => {
     );
     const haiku = await screen.findByRole('button', { name: 'haiku' });
     expect(haiku.className).toContain('bg-(--color-accent)');
+  });
+});
+
+const CONNECTORS = [
+  { id: 'c1', name: 'github', description: 'issues', enabled: true, createdAt: 0,
+    config: { transport: 'stdio', command: 'npx', args: [], env: {} }, missingSecrets: [] },
+  { id: 'c2', name: 'needs-key', description: '', enabled: true, createdAt: 0,
+    config: { transport: 'stdio', command: 'npx', args: [], env: {} }, missingSecrets: ['GH_TOKEN'] },
+];
+
+describe('BotSettings — connectors panel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listSkills.mockResolvedValue([]);
+    listMemory.mockResolvedValue([]);
+    listRoutines.mockResolvedValue([]);
+    listConnectors.mockResolvedValue(CONNECTORS);
+    getBotConnectors.mockResolvedValue([]);
+    setBotConnectors.mockResolvedValue({ ok: true });
+  });
+
+  const renderPanel = () =>
+    render(<BotSettings bot={makeBot()} onClose={vi.fn()} onUpdated={vi.fn()} onDuplicated={vi.fn()} onDeleted={vi.fn()} />);
+
+  it('lists every connector with its transport', async () => {
+    renderPanel();
+    expect(await screen.findByText('github')).toBeInTheDocument();
+    expect(await screen.findByText('needs-key')).toBeInTheDocument();
+  });
+
+  // A connector that cannot start should say so where it is assigned, not only on the
+  // Connectors screen — otherwise the bot silently lacks a tool it was given.
+  it('warns about a connector whose secret is missing', async () => {
+    renderPanel();
+    expect(await screen.findByText(/missing secret: GH_TOKEN/)).toBeInTheDocument();
+  });
+
+  // The trap the skills panel documents: without seeding from what the bot already has, the
+  // first save writes an empty list and revokes everything.
+  it('seeds the checkboxes from the bot current assignments', async () => {
+    getBotConnectors.mockResolvedValue([CONNECTORS[0]]);
+    renderPanel();
+    const boxes = await screen.findAllByRole('checkbox');
+    await waitFor(() => expect(boxes[0]).toBeChecked());
+    expect(boxes[1]).not.toBeChecked();
+  });
+
+  it('saves the ids that are ticked', async () => {
+    renderPanel();
+    const boxes = await screen.findAllByRole('checkbox');
+    fireEvent.click(boxes[1]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Save connectors' }));
+    await waitFor(() => expect(setBotConnectors).toHaveBeenCalledWith('bot-1', ['c2']));
+  });
+
+  it('points at the Connectors screen when there are none', async () => {
+    listConnectors.mockResolvedValue([]);
+    renderPanel();
+    expect(await screen.findByText(/No connectors yet/)).toBeInTheDocument();
   });
 });

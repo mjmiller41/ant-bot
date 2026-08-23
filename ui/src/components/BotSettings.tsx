@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MODEL_TIERS, type Bot, type Skill } from '@antbot/contract';
+import { MODEL_TIERS, type Bot, type Skill, type ApiConnector } from '@antbot/contract';
 import { api, ApiError } from '../api/client.js';
 import { RoutinesPanel } from './RoutinesPanel.js';
 import { EMOJI_CHOICES } from './emoji.js';
@@ -245,6 +245,69 @@ function SkillRow({
   );
 }
 
+/**
+ * Which connectors this bot may use. Assignment is the permission: a connector the bot is not
+ * given simply is not mounted for its turns, so its tools do not exist as far as the model is
+ * concerned. Managing the connectors themselves happens on the Connectors screen.
+ */
+function ConnectorsEditor({ botId }: { botId: string }) {
+  const [connectors, setConnectors] = useState<ApiConnector[]>([]);
+  const [enabled, setEnabled] = useState<Set<string>>(new Set());
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.connectors.list().then(setConnectors);
+  }, []);
+
+  // Same trap as the skills panel: without seeding from what the bot already has, the first
+  // "Save connectors" writes an empty list and quietly revokes everything.
+  useEffect(() => {
+    api.bots.connectors.get(botId).then((assigned) => setEnabled(new Set(assigned.map((c) => c.id))));
+  }, [botId]);
+
+  function toggle(id: string) {
+    setEnabled((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setSaved(false);
+  }
+
+  async function save() {
+    await api.bots.connectors.set(botId, Array.from(enabled));
+    setSaved(true);
+  }
+
+  if (connectors.length === 0) {
+    return <p className="text-xs text-(--color-text-muted)">No connectors yet. Add one on the Connectors screen.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {connectors.map((c) => (
+        <label key={c.id} className="flex items-start gap-2 text-xs">
+          <input type="checkbox" checked={enabled.has(c.id)} onChange={() => toggle(c.id)} className="mt-0.5" />
+          <span className="min-w-0">
+            <span className="font-medium">{c.name}</span>
+            <span className="ml-1 text-(--color-text-muted)">{String(c.config.transport)}</span>
+            {!c.enabled && <span className="ml-1 text-(--color-text-muted)">(disabled)</span>}
+            {c.missingSecrets.length > 0 && (
+              <span className="ml-1 text-(--color-amber)">missing secret: {c.missingSecrets.join(', ')}</span>
+            )}
+            {c.description && <span className="block truncate text-(--color-text-muted)" title={c.description}>{c.description}</span>}
+          </span>
+        </label>
+      ))}
+      <button type="button" onClick={save} className="rounded bg-(--color-accent) px-3 py-1.5 text-xs font-medium text-(--color-accent-fg)">
+        Save connectors
+      </button>
+      {saved && <span className="ml-2 text-xs text-(--color-green)">Saved</span>}
+    </div>
+  );
+}
+
 function SkillsEditor({ botId }: { botId: string }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
@@ -373,6 +436,11 @@ export function BotSettings({ bot, onClose, onUpdated, onDuplicated, onDeleted }
       <section className="mb-6 border-t border-(--color-border) pt-4">
         <h3 className="mb-2 text-sm font-semibold">Skills</h3>
         <SkillsEditor botId={bot.id} />
+      </section>
+
+      <section className="mb-6 border-t border-(--color-border) pt-4">
+        <h3 className="mb-2 text-sm font-semibold">Connectors</h3>
+        <ConnectorsEditor botId={bot.id} />
       </section>
 
       <section className="border-t border-(--color-border) pt-4">

@@ -5,7 +5,8 @@ import {
   type Bot, type Thread, type Message, type Attachment, type Approval, type Rule,
   type Skill, type Routine, type RoutineRun, type MailboxEntry, type UsageRow,
   type Card, type BotState, type Attention, type ModelTier, type Settings,
-  SettingsSchema,
+  type Connector, type ConnectorConfig,
+  SettingsSchema, ConnectorConfigSchema,
 } from '@antbot/contract';
 
 /* ------------------------------ row mappers ------------------------------ */
@@ -43,6 +44,16 @@ const toRule = (r: Row): Rule => ({
 const toSkill = (r: Row): Skill => ({
   id: r.id, slug: r.slug, name: r.name, description: r.description, path: r.path,
   source: r.source, createdAt: r.created_at,
+});
+/**
+ * Config is stored as JSON and parsed back through the schema rather than cast: a row written by
+ * an older build (or edited by hand) that no longer matches the union should fail here, loudly,
+ * not surface as a malformed server config at turn time.
+ */
+const toConnector = (r: Row): Connector => ({
+  id: r.id, name: r.name, description: r.description,
+  config: ConnectorConfigSchema.parse(JSON.parse(r.config_json)),
+  enabled: b(r.enabled), createdAt: r.created_at,
 });
 const toRoutine = (r: Row): Routine => ({
   id: r.id, botId: r.bot_id, name: r.name, cronExpr: r.cron_expr, timezone: r.timezone,
@@ -146,9 +157,11 @@ export class Store {
       name: `${src.name} copy`, title: src.title, description: src.description,
       avatarEmoji: src.avatarEmoji, modelTier: src.modelTier,
     });
-    // carries skills + routines; NOT history or memory (outline §4)
+    // carries skills + connectors + routines; NOT history or memory (outline §4)
     for (const bs of this.db.prepare(`SELECT * FROM bot_skills WHERE bot_id=?`).all(id) as Row[])
       this.db.prepare(`INSERT OR REPLACE INTO bot_skills (bot_id,skill_id,enabled) VALUES (?,?,?)`).run(copy.id, bs.skill_id, bs.enabled);
+    for (const bc of this.db.prepare(`SELECT * FROM bot_connectors WHERE bot_id=?`).all(id) as Row[])
+      this.db.prepare(`INSERT OR REPLACE INTO bot_connectors (bot_id,connector_id,enabled) VALUES (?,?,?)`).run(copy.id, bc.connector_id, bc.enabled);
     for (const r of this.listRoutines(id))
       this.createRoutine({ botId: copy.id, name: r.name, cronExpr: r.cronExpr, timezone: r.timezone, instructionMd: r.instructionMd, enabled: false });
     return copy;
@@ -366,6 +379,54 @@ export class Store {
     return (this.db.prepare(
       `SELECT s.* FROM skills s JOIN bot_skills bs ON bs.skill_id=s.id WHERE bs.bot_id=? AND bs.enabled=1`,
     ).all(botId) as Row[]).map(toSkill);
+  }
+
+  /* ---- connectors ---- */
+  createConnector(c: { name: string; description?: string; config: ConnectorConfig; enabled?: boolean }): Connector {
+    const id = newId();
+    this.db.prepare(
+      `INSERT INTO connectors (id,name,description,config_json,enabled,created_at) VALUES (?,?,?,?,?,?)`,
+    ).run(id, c.name, c.description ?? '', JSON.stringify(c.config), i(c.enabled, true), now());
+    return this.getConnector(id)!;
+  }
+  getConnector(id: string): Connector | null {
+    const r = this.db.prepare(`SELECT * FROM connectors WHERE id=?`).get(id) as Row | undefined;
+    return r ? toConnector(r) : null;
+  }
+  getConnectorByName(name: string): Connector | null {
+    const r = this.db.prepare(`SELECT * FROM connectors WHERE name=?`).get(name) as Row | undefined;
+    return r ? toConnector(r) : null;
+  }
+  listConnectors(): Connector[] {
+    return (this.db.prepare(`SELECT * FROM connectors ORDER BY name ASC`).all() as Row[]).map(toConnector);
+  }
+  /** Patch in place. No rename: the name is baked into every `mcp__<name>__<tool>` a rule may match. */
+  updateConnector(id: string, patch: { description?: string; config?: ConnectorConfig; enabled?: boolean }): Connector | null {
+    const existing = this.getConnector(id);
+    if (!existing) return null;
+    this.db.prepare(`UPDATE connectors SET description=?, config_json=?, enabled=? WHERE id=?`).run(
+      patch.description ?? existing.description,
+      JSON.stringify(patch.config ?? existing.config),
+      i(patch.enabled ?? existing.enabled),
+      id,
+    );
+    return this.getConnector(id);
+  }
+  deleteConnector(id: string): void {
+    this.db.prepare(`DELETE FROM connectors WHERE id=?`).run(id);
+    this.db.prepare(`DELETE FROM bot_connectors WHERE connector_id=?`).run(id);
+  }
+  setBotConnectors(botId: string, connectorIds: string[]): void {
+    this.db.prepare(`DELETE FROM bot_connectors WHERE bot_id=?`).run(botId);
+    const stmt = this.db.prepare(`INSERT OR REPLACE INTO bot_connectors (bot_id,connector_id,enabled) VALUES (?,?,1)`);
+    for (const c of connectorIds) stmt.run(botId, c);
+  }
+  /** Assigned AND account-wide enabled — disabling a connector takes it away from every bot at once. */
+  listBotConnectors(botId: string): Connector[] {
+    return (this.db.prepare(
+      `SELECT c.* FROM connectors c JOIN bot_connectors bc ON bc.connector_id=c.id
+       WHERE bc.bot_id=? AND bc.enabled=1 AND c.enabled=1 ORDER BY c.name ASC`,
+    ).all(botId) as Row[]).map(toConnector);
   }
 
   /* ---- routines ---- */

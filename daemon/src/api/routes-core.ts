@@ -119,6 +119,17 @@ export function registerCoreRoutes(f: FastifyInstance, app: App): void {
     return { ok: true };
   });
 
+  f.get<{ Params: { id: string } }>('/api/bots/:id/connectors', async (req, reply) => {
+    if (!store.getBot(req.params.id)) return reply.code(404).send({ error: 'No such bot' });
+    return store.listBotConnectors(req.params.id);
+  });
+
+  f.put<{ Params: { id: string }; Body: { connectorIds: string[] } }>('/api/bots/:id/connectors', async (req, reply) => {
+    if (!store.getBot(req.params.id)) return reply.code(404).send({ error: 'No such bot' });
+    store.setBotConnectors(req.params.id, req.body?.connectorIds ?? []);
+    return { ok: true };
+  });
+
   /* ----------------------------- threads ------------------------------ */
   f.get('/api/threads', async () => store.listThreads());
 

@@ -139,3 +139,33 @@ describe('help', () => {
     }
   });
 });
+
+describe('connector: passthrough argument grammar', () => {
+  // `--env K=V` repeats, which the flag parser's one-value-per-flag model cannot hold. The
+  // subcommand parses its own tokens instead, so they must arrive untouched.
+  it('passes every token through as a positional, repeats included', () => {
+    const p = parseArgs(['connector', 'add', 'gh', '--stdio', 'npx srv', '--env', 'A=1', '--env', 'B=2']);
+    expect(p.command).toBe('connector');
+    expect(p.positionals).toEqual(['add', 'gh', '--stdio', 'npx srv', '--env', 'A=1', '--env', 'B=2']);
+    expect(p.flags).toEqual({});
+  });
+
+  it('does not reject a flag it has never heard of', () => {
+    expect(() => parseArgs(['connector', 'add', 'x', '--anything-at-all', 'v'])).not.toThrow();
+  });
+
+  it('keeps a secret reference intact', () => {
+    const p = parseArgs(['connector', 'add', 'gh', '--env', 'T={{secret:GH}}']);
+    expect(p.positionals).toContain('T={{secret:GH}}');
+  });
+
+  // One source of help text: --help is still intercepted so help.ts answers, not the subcommand.
+  it('still intercepts --help', () => {
+    expect(parseArgs(['connector', '--help']).help).toBe(true);
+  });
+
+  it('leaves other commands' + String.fromCharCode(39) + ' flag parsing alone', () => {
+    expect(parseArgs(['start', '--port', '4791']).flags.port).toBe(4791);
+    expect(() => parseArgs(['start', '--nope'])).toThrow();
+  });
+});

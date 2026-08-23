@@ -4,6 +4,36 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-08-23
+
+### Added
+
+- **MCP connectors.** External MCP servers can be registered account-wide and assigned to
+  individual Bots, the way skills are. Assignment *is* the permission: a Bot that has not been
+  given a connector never has the server mounted, so its tools do not exist for that Bot.
+  Disabling a connector withdraws it from every Bot at once.
+  - Manage them on the new **Connectors** screen, over `/api/connectors`, or with
+    `antbot connector list|add|enable|disable|remove|test`.
+  - `antbot connector test` connects to the server and lists the tools it offers, so a broken
+    command or a wrong URL is visible before a Bot ever tries to use it.
+  - stdio, http and sse transports; http and sse accept an optional per-tool allowlist.
+  - Tools reach Bots as `mcp__<name>__<tool>` and pass the permission gateway unchanged — the
+    first call raises an approval card, and you allow what you trust with a rule.
+- **Credentials by reference.** Any connector env value or header may contain `{{secret:NAME}}`.
+  The daemon resolves it from the keychain when the server starts; the value lives only in that
+  subprocess's environment or its outbound headers, never in the database, an API response, a log
+  line, or a Bot's context. A reference with nothing behind it is flagged in the UI and CLI, and
+  the connector is skipped for the turn rather than failing it.
+  - This gives `SecretsService` a scoped `resolve()`; the unscoped `envOverlay()` remains unused.
+
+### Changed
+
+- `docs/USER-GUIDE.md` gains §11 (Connectors); later sections renumbered, §23 is now the
+  known-limitations list. `docs/API-CONTRACT.md` documents seven new endpoints — a deliberate
+  change to a frozen contract. `docs/SECURITY.md` gains a connectors section covering what the
+  workspace boundary does not cover, why allow rules should be fully qualified, and the fact that
+  a credential does reach the connector's own process.
+
 ## [0.1.5] — 2026-08-23
 
 ### Fixed

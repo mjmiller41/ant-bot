@@ -35,8 +35,8 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 36 test files / 672 tests passing**
-(contract 22, daemon 471, ui 63, cli 116). The table in `README.md` matches; if you touch it,
+Baseline as of this checkout: **build clean, typecheck clean, 41 test files / 775 tests passing**
+(contract 34, daemon 528, ui 80, cli 133). The table in `README.md` matches; if you touch it,
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
@@ -77,6 +77,8 @@ Daemon internals:
 | `src/bots/prompt.ts` | System prompt assembly (persona + job description + memory + skills + roster). |
 | `src/agent/session.ts` | Thin wrapper over the SDK's `query()`; normalizes SDK messages into `TurnEvent`s. |
 | `src/permissions/` | `gateway.ts` (decision flow) · `rules.ts` (matcher + `BUILTIN_RULES`) · `local.ts` (workspace boundary) · `autoreview.ts` (Haiku) · `secrets.ts` (keychain). |
+| `src/bots/connectors.ts` | Pure core for MCP connectors: secret-ref extraction, mount planning, config building. |
+| `src/bots/mcpProbe.ts` | Hand-rolled MCP client behind `antbot connector test`. Advisory only, never in a turn. |
 | `src/skills/` | `skills.ts` (store, frontmatter) · `install.ts` (source parsing, git/url staging) · `plugin.ts` (local-plugin layout) · `bundled.ts` (shipped-skill sync + ledger) · `spec.ts` (Agent Skills spec validation). |
 | `src/scheduler/scheduler.ts` | node-cron per routine, own `nextRunAt` cron evaluator, away-guard logic. |
 | `src/computer/` | `browser.ts` (Playwright persistent context, screencast, takeover) · `tools.ts` (`browser_*` MCP server). |
@@ -141,6 +143,20 @@ the last, and unordered input inverts mouse down/up and shuffles typing, which p
 keys work" rather than as a bug. Input does not pass the Permission
 Gateway on purpose: the gateway governs what *bots* do, and this is the human acting as
 themselves. Do not add a path that dispatches input without that check.
+
+**Connector secret values exist in exactly one place.** A connector row stores `{{secret:NAME}}`
+references; `buildMcpServerConfig()` is the only code that turns one into a value, and its output
+goes straight into the turn's `mcpServers` map. Nothing else may return, log, or persist it —
+`GET /api/connectors` and `POST /api/connectors/:id/test` both carry references only. A reference
+that resolves to nothing skips the connector for that turn rather than mounting the placeholder as
+if it were a credential.
+
+**Connector names are validated, and the reason is `toolNameAliases()`.** Names ban underscores
+and reserve `antbot`/`browser` (`CONNECTOR_NAME_RE` in the contract). A name containing `__` would
+break the `mcp__<name>__<tool>` split, making the connector's tools unmatchable by the rules meant
+to gate them; a reserved name would overwrite a built-in server in the turn's map. Do not seed a
+`require mcp__*` builtin rule either — it matches the full alias of every existing `antbot`/
+`browser` tool, and a matching `require` beats every user `allow`.
 
 **Secrets never enter the model's context.** `request_secret` returns a confirmation string only.
 `GET /api/secrets` returns names, never values. Do not add anything that puts a value in a
@@ -278,12 +294,12 @@ where schema SQL lives by definition.
 
 ## Known gaps — the actual work queue
 
-`docs/USER-GUIDE.md` §22 is the authoritative, honest list and it is accurate; I re-verified every
+`docs/USER-GUIDE.md` §23 is the authoritative, honest list and it is accurate; I re-verified every
 claim below by grep. Treat these as unimplemented, not as bugs to work around:
 
 | Gap | Evidence |
 |---|---|
-| Stored secrets never reach a bot | `SecretsService.envOverlay()` is defined and never called |
+| Secrets reach connectors, not a bot's own shell | `SecretsService.resolve()` feeds connector env/headers; nothing injects a secret into the bot's `Bash` environment, and `envOverlay()` is still uncalled |
 | File cards are never emitted | `type: 'file'` is only ever *rendered* (`Cards.tsx`); no server code creates one |
 | `request_secret` has no UI | the event lands in `useStore.secretRequests`; no component reads it |
 | Daily token budget | `dailyTokenBudget` is read only by `SettingsScreen`; nothing enforces it |
@@ -355,7 +371,7 @@ to be trusted. If your change alters behavior they describe, update them in the 
 |---|---|
 | `docs/API-CONTRACT.md` | any route, WS frame, or payload shape (**frozen — a change is a decision, not a detail**) |
 | `docs/SECURITY.md` | rules, the gateway, secrets, the workspace boundary, billing-env handling |
-| `docs/USER-GUIDE.md` | any user-visible behavior — and §22 whenever you close or open a gap |
+| `docs/USER-GUIDE.md` | any user-visible behavior — and §23 whenever you close or open a gap |
 | `docs/SKILLS.md` / `skills/README.md` | the skill format, install sources, or the plugin layout |
 | `README.md` | commands, layout, requirements, the Status section, the `~/.ant-bot` data map |
 | `contract/`·`daemon/`·`ui/`·`cli/` `README.md` | that package's role, its layout, or its own gotchas |

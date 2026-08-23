@@ -44,6 +44,26 @@ const BASELINE_SENTINEL_TABLE = 'bots';
 
 export const MIGRATIONS: Migration[] = [
   { version: BASELINE_VERSION, name: 'baseline', up: SCHEMA_SQL },
+  {
+    version: 2,
+    name: 'connectors',
+    // Plain CREATE TABLE, not IF NOT EXISTS: the ledger already guarantees this runs once, and
+    // this module exists precisely because IF NOT EXISTS turns a real conflict into silence.
+    up: `
+CREATE TABLE connectors (
+  id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  config_json TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE bot_connectors (
+  bot_id TEXT NOT NULL, connector_id TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (bot_id, connector_id)
+);
+`,
+  },
 ];
 
 export const SCHEMA_VERSION_SQL = `

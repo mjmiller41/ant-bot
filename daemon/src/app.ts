@@ -7,6 +7,7 @@ import { PermissionGateway } from './permissions/gateway.js';
 import { seedBuiltinRules } from './permissions/rules.js';
 import { makeAutoReviewer, NullAutoReviewer } from './permissions/autoreview.js';
 import { BotManager } from './bots/manager.js';
+import { planConnectorMount, extractSecretRefs, buildMcpServerConfig } from './bots/connectors.js';
 import { loadConfig, type AntbotConfig } from './config/config.js';
 import { logger } from './util/log.js';
 import type { Settings } from '@antbot/contract';
@@ -112,6 +113,39 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
       } catch {
         return undefined;
       }
+    },
+    /**
+     * Resolve this bot's connectors into mountable MCP servers.
+     *
+     * This is the only place a secret value is read for a turn, and the values live nowhere but
+     * the returned config — not in the row, not in a log line, not in anything a route returns.
+     * A connector missing a credential is dropped rather than mounted broken or allowed to fail
+     * the turn; the human was already warned on the connectors screen.
+     */
+    connectorServers: async (botId: string) => {
+      const assigned = store.listBotConnectors(botId);
+      if (!assigned.length) return { servers: {}, mounted: [] };
+
+      const available = new Set(app.secrets?.list() ?? []);
+      const { mount, skipped } = planConnectorMount(assigned, available);
+      for (const s of skipped) {
+        log.warn(`connector "${s.connector.name}" not mounted — missing secret(s): ${s.missing.join(', ')}`);
+      }
+
+      const servers: Record<string, unknown> = {};
+      const mounted: { name: string; description: string }[] = [];
+      for (const connector of mount) {
+        const refs = extractSecretRefs(connector.config);
+        try {
+          const secrets = refs.length ? await app.secrets!.resolve(refs) : new Map<string, string | null>();
+          servers[connector.name] = buildMcpServerConfig(connector, secrets);
+          mounted.push({ name: connector.name, description: connector.description });
+        } catch (err) {
+          // A secret that vanished between planning and reading. Same treatment as a missing one.
+          log.warn(`connector "${connector.name}" not mounted`, (err as Error).message);
+        }
+      }
+      return { servers, mounted };
     },
   });
 

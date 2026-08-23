@@ -95,6 +95,17 @@ export async function postJson<T>(port: number, path: string, body: unknown): Pr
   );
 }
 
+export async function patchJson<T>(port: number, path: string, body: unknown): Promise<T> {
+  return unwrap<T>(
+    await fetch(`${BASE(port)}${path}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    }),
+  );
+}
+
 export async function deleteJson<T>(port: number, path: string): Promise<T> {
   return unwrap<T>(
     await fetch(`${BASE(port)}${path}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) }),

@@ -478,3 +478,81 @@ describe('updateSkill', () => {
     expect(freshStore().updateSkill('nope', { name: 'x' })).toBeNull();
   });
 });
+
+describe('connectors', () => {
+  const freshStore = (): Store => new Store(openDb(':memory:'));
+  const cfg = { transport: 'stdio' as const, command: 'npx', args: ['-y', 'srv'], env: {} };
+
+  it('creates, reads by id and by name, and lists alphabetically', () => {
+    const s = freshStore();
+    s.createConnector({ name: 'zulip', config: cfg });
+    const gh = s.createConnector({ name: 'github', description: 'issues', config: cfg });
+    expect(s.getConnector(gh.id)).toMatchObject({ name: 'github', description: 'issues', enabled: true });
+    expect(s.getConnectorByName('github')?.id).toBe(gh.id);
+    expect(s.listConnectors().map((c) => c.name)).toEqual(['github', 'zulip']);
+  });
+
+  it('round-trips the config through JSON', () => {
+    const s = freshStore();
+    const http = { transport: 'http' as const, url: 'https://x.dev/mcp', headers: { A: 'b' }, tools: ['t'] };
+    const c = s.createConnector({ name: 'remote', config: http });
+    expect(s.getConnector(c.id)!.config).toEqual(http);
+  });
+
+  it('refuses a duplicate name', () => {
+    const s = freshStore();
+    s.createConnector({ name: 'dup', config: cfg });
+    expect(() => s.createConnector({ name: 'dup', config: cfg })).toThrow();
+  });
+
+  it('patches description, config and enabled without renaming', () => {
+    const s = freshStore();
+    const c = s.createConnector({ name: 'gh', config: cfg });
+    const up = s.updateConnector(c.id, { description: 'now documented', enabled: false });
+    expect(up).toMatchObject({ name: 'gh', description: 'now documented', enabled: false });
+    expect(s.updateConnector('nope', { enabled: true })).toBeNull();
+  });
+
+  it('assigns to a bot and reads them back', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout' });
+    const a = s.createConnector({ name: 'aaa', config: cfg });
+    const b2 = s.createConnector({ name: 'bbb', config: cfg });
+    s.setBotConnectors(bot.id, [a.id, b2.id]);
+    expect(s.listBotConnectors(bot.id).map((c) => c.name)).toEqual(['aaa', 'bbb']);
+    s.setBotConnectors(bot.id, [b2.id]);
+    expect(s.listBotConnectors(bot.id).map((c) => c.name)).toEqual(['bbb']);
+  });
+
+  // Disabling account-wide is the kill switch: it must take the connector away from every bot
+  // at once, without touching anyone's assignments.
+  it('hides a disabled connector from every bot but keeps the assignment', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout' });
+    const c = s.createConnector({ name: 'gh', config: cfg });
+    s.setBotConnectors(bot.id, [c.id]);
+    s.updateConnector(c.id, { enabled: false });
+    expect(s.listBotConnectors(bot.id)).toEqual([]);
+    s.updateConnector(c.id, { enabled: true });
+    expect(s.listBotConnectors(bot.id).map((x) => x.name)).toEqual(['gh']);
+  });
+
+  it('drops assignments when the connector is deleted', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout' });
+    const c = s.createConnector({ name: 'gh', config: cfg });
+    s.setBotConnectors(bot.id, [c.id]);
+    s.deleteConnector(c.id);
+    expect(s.getConnector(c.id)).toBeNull();
+    expect(s.listBotConnectors(bot.id)).toEqual([]);
+  });
+
+  it('carries connectors to a duplicated bot, like skills', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout' });
+    const c = s.createConnector({ name: 'gh', config: cfg });
+    s.setBotConnectors(bot.id, [c.id]);
+    const copy = s.duplicateBot(bot.id)!;
+    expect(s.listBotConnectors(copy.id).map((x) => x.name)).toEqual(['gh']);
+  });
+});

@@ -16,6 +16,8 @@ import {
 } from './migrations.js';
 
 const m = (version: number, name: string, up = 'SELECT 1;'): Migration => ({ version, name, up });
+/** First version the real list does not use — synthetic migrations must not collide with it. */
+const NEXT = MIGRATIONS[MIGRATIONS.length - 1]!.version + 1;
 
 describe('planMigrations', () => {
   it('returns everything for an empty database', () => {
@@ -75,8 +77,9 @@ describe('migrate', () => {
     const db = new Database(':memory:');
     const result = migrate(db);
     expect(result.from).toBe(0);
-    expect(result.to).toBe(BASELINE_VERSION);
-    expect(result.applied.map((a) => a.name)).toEqual(['baseline']);
+    // Every migration, baseline first — asserted as a prefix so adding one does not fail this.
+    expect(result.applied[0]?.name).toBe('baseline');
+    expect(result.to).toBe(MIGRATIONS[MIGRATIONS.length - 1]!.version);
     expect(db.prepare(`SELECT COUNT(*) c FROM bots`).get()).toEqual({ c: 0 });
   });
 
@@ -104,7 +107,10 @@ describe('migrate', () => {
 
     const result = migrate(db);
     expect(result.from).toBe(BASELINE_VERSION);
-    expect(result.applied).toEqual([]);
+    // Adopted at the baseline, so only what comes after it runs — never the baseline again.
+    expect(result.applied.map((a) => a.version)).toEqual(
+      MIGRATIONS.filter((m) => m.version > BASELINE_VERSION).map((m) => m.version),
+    );
     expect(db.prepare(`SELECT COUNT(*) c FROM bots`).get()).toEqual({ c: 1 });
   });
 
@@ -114,9 +120,9 @@ describe('migrate', () => {
     const db = new Database(':memory:');
     db.exec(SCHEMA_SQL);
     migrate(db, { now: () => 1_700_000_000_000 });
-    expect(db.prepare(`SELECT * FROM schema_version`).all()).toEqual([
+    expect(db.prepare(`SELECT * FROM schema_version WHERE version=?`).get(BASELINE_VERSION)).toEqual(
       { version: BASELINE_VERSION, name: 'baseline', applied_at: 1_700_000_000_000 },
-    ]);
+    );
   });
 
   it('does not re-record the baseline on a later open', () => {
@@ -124,38 +130,42 @@ describe('migrate', () => {
     db.exec(SCHEMA_SQL);
     migrate(db);
     migrate(db);
-    expect(db.prepare(`SELECT COUNT(*) c FROM schema_version`).get()).toEqual({ c: 1 });
+    expect(db.prepare(`SELECT COUNT(*) c FROM schema_version WHERE version=?`).get(BASELINE_VERSION))
+      .toEqual({ c: 1 });
   });
 
   it('applies a later migration to an adopted pre-runner database', () => {
     const db = new Database(':memory:');
     db.exec(SCHEMA_SQL);
-    const extra = [...MIGRATIONS, m(BASELINE_VERSION + 1, 'add-nickname', `ALTER TABLE bots ADD COLUMN nickname TEXT;`)];
+    const extra = [...MIGRATIONS, m(NEXT, 'add-nickname', `ALTER TABLE bots ADD COLUMN nickname TEXT;`)];
 
     const result = migrate(db, { migrations: extra });
     expect(result.from).toBe(BASELINE_VERSION);
-    expect(result.applied.map((a) => a.name)).toEqual(['add-nickname']);
+    expect(result.applied.map((a) => a.name)).toEqual([
+      ...MIGRATIONS.filter((x) => x.version > BASELINE_VERSION).map((x) => x.name),
+      'add-nickname',
+    ]);
     const cols = (db.prepare(`PRAGMA table_info(bots)`).all() as { name: string }[]).map((c) => c.name);
     expect(cols).toContain('nickname');
     // Both the adopted baseline and the migration that followed it.
     expect(db.prepare(`SELECT version FROM schema_version ORDER BY version`).all())
-      .toEqual([{ version: 1 }, { version: 2 }]);
+      .toEqual([...MIGRATIONS.map((x) => ({ version: x.version })), { version: NEXT }]);
   });
 
   it('leaves the ledger honest when a migration fails partway through a list', () => {
     const db = new Database(':memory:');
     const bad = [
       ...MIGRATIONS,
-      m(2, 'good', `ALTER TABLE bots ADD COLUMN one TEXT;`),
-      m(3, 'bad', `ALTER TABLE nonexistent_table ADD COLUMN two TEXT;`),
-      m(4, 'never', `ALTER TABLE bots ADD COLUMN three TEXT;`),
+      m(NEXT, 'good', `ALTER TABLE bots ADD COLUMN one TEXT;`),
+      m(NEXT + 1, 'bad', `ALTER TABLE nonexistent_table ADD COLUMN two TEXT;`),
+      m(NEXT + 2, 'never', `ALTER TABLE bots ADD COLUMN three TEXT;`),
     ];
-    expect(() => migrate(db, { migrations: bad })).toThrow(/migration 3 \(bad\) failed/);
+    expect(() => migrate(db, { migrations: bad })).toThrow(new RegExp(`migration ${NEXT + 1} \\(bad\\) failed`));
 
     const applied = (db.prepare(`SELECT version FROM schema_version ORDER BY version`).all() as {
       version: number;
     }[]).map((r) => r.version);
-    expect(applied).toEqual([1, 2]);
+    expect(applied).toEqual([...MIGRATIONS.map((x) => x.version), NEXT]);
 
     const cols = (db.prepare(`PRAGMA table_info(bots)`).all() as { name: string }[]).map((c) => c.name);
     expect(cols).toContain('one');
@@ -166,7 +176,7 @@ describe('migrate', () => {
     const db = new Database(':memory:');
     const bad = [
       ...MIGRATIONS,
-      m(2, 'half', `ALTER TABLE bots ADD COLUMN ok TEXT; ALTER TABLE nope ADD COLUMN boom TEXT;`),
+      m(NEXT, 'half', `ALTER TABLE bots ADD COLUMN ok TEXT; ALTER TABLE nope ADD COLUMN boom TEXT;`),
     ];
     expect(() => migrate(db, { migrations: bad })).toThrow(MigrationError);
 
@@ -203,18 +213,59 @@ describe('migrate: pre-migration snapshot', () => {
     db.pragma('journal_mode = WAL');
     const result = migrate(db, {
       backupsDir: backups,
-      migrations: [...MIGRATIONS, m(2, 'add-nickname', `ALTER TABLE bots ADD COLUMN nickname TEXT;`)],
+      migrations: [...MIGRATIONS, m(NEXT, 'add-nickname', `ALTER TABLE bots ADD COLUMN nickname TEXT;`)],
       now: () => 1_700_000_000_000,
     });
     db.close();
 
-    expect(result.backupPath).toBe(path.join(backups, 'antbot-pre-v2-2023-11-14T22-13-20-000Z.db'));
+    expect(result.backupPath).toBe(path.join(backups, `antbot-pre-v${NEXT}-2023-11-14T22-13-20-000Z.db`));
     const snap = new Database(result.backupPath!, { readonly: true });
     expect(snap.prepare(`SELECT slug FROM bots`).all()).toEqual([{ slug: 'ada' }]);
     // The snapshot is of the *old* schema — that is the point of taking it first.
     const cols = (snap.prepare(`PRAGMA table_info(bots)`).all() as { name: string }[]).map((c) => c.name);
     expect(cols).not.toContain('nickname');
     snap.close();
+  });
+});
+
+describe('migration 2 — connectors', () => {
+  const tables = (db: Database.Database): string[] =>
+    (db.prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).all() as { name: string }[])
+      .map((r) => r.name);
+
+  it('creates both connector tables on a fresh database', () => {
+    const db = new Database(':memory:');
+    expect(migrate(db).to).toBe(2);
+    expect(tables(db)).toEqual(expect.arrayContaining(['connectors', 'bot_connectors']));
+  });
+
+  // The upgrade that matters: a database that predates the runner adopts at the baseline and then
+  // must actually receive migration 2, with its rows intact.
+  it('applies to a pre-runner database and preserves its data', () => {
+    const db = new Database(':memory:');
+    db.exec(SCHEMA_SQL);
+    db.prepare(`INSERT INTO bots (id, slug, name, created_at) VALUES ('b1','ada','Ada',1)`).run();
+
+    const result = migrate(db);
+    expect(result.from).toBe(BASELINE_VERSION);
+    expect(result.applied.map((a) => a.name)).toEqual(['connectors']);
+    expect(tables(db)).toEqual(expect.arrayContaining(['connectors', 'bot_connectors']));
+    expect(db.prepare(`SELECT COUNT(*) c FROM bots`).get()).toEqual({ c: 1 });
+  });
+
+  it('is not applied twice', () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    expect(migrate(db).applied).toEqual([]);
+    expect(db.prepare(`SELECT COUNT(*) c FROM schema_version`).get()).toEqual({ c: 2 });
+  });
+
+  it('enforces unique connector names at the schema level', () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    const ins = db.prepare(`INSERT INTO connectors (id,name,config_json,created_at) VALUES (?,?,'{}',0)`);
+    ins.run('c1', 'gh');
+    expect(() => ins.run('c2', 'gh')).toThrow();
   });
 });
 
