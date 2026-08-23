@@ -1232,6 +1232,12 @@ Taking over blocks the Bot from that page and gives you the mouse and keyboard: 
 scrolling and paste are forwarded into the page, so you can finish a login, a 2FA prompt or a
 CAPTCHA and hand control back.
 
+Copy and paste work in both directions, though not the way they look. **Ctrl+V** pastes your own
+clipboard into the page. **Ctrl+C** copies the page's current selection to your clipboard — it has
+to make a round trip to the daemon to do it, because the page runs in a headless browser with a
+clipboard of its own that you cannot reach. **Ctrl+X** does both: it copies out and lets the page
+delete. You will see a short confirmation saying how much was copied, or why it could not be.
+
 What it is not is a real browser window. The view is a throttled JPEG screencast, so it is lower
 fidelity and less responsive than driving Chromium directly, and browser-level keys (`F5`, `F11`,
 `F12`, and the back/forward media keys) are deliberately not forwarded — they would navigate away

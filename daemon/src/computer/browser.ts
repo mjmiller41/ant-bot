@@ -196,6 +196,9 @@ export interface TakeOverResult {
 
 type FrameListener = (jpegBase64: string, w: number, h: number) => void;
 
+/** A selection can be a whole document; this socket is otherwise carrying video. */
+const MAX_SELECTION_CHARS = 100_000;
+
 /**
  * One Playwright persistent browser context shared by every Bot ("the computer"), with a
  * dedicated Page ("screen") per botId. Because all pages share one persistent context, cookies
@@ -611,6 +614,37 @@ export class BrowserService {
 
   returnControl(botId: string): void {
     this.takenOver.delete(botId);
+  }
+
+  /**
+   * The remote page's current text selection, for copying out of a taken-over screen.
+   *
+   * Gated the same way as input: while a bot is working the screencast is a window, not a
+   * console. Reading a selection is milder than clicking, but the rule "this channel does
+   * nothing unless the human holds control" is worth more than the exception.
+   *
+   * Capped, because a selection can be an entire document and this crosses a socket that is
+   * otherwise carrying video.
+   */
+  async readSelection(botId: string): Promise<string> {
+    if (!this.takenOver.has(botId)) {
+      throw new ScreenNotTakenOverError(
+        'A selection was requested for a screen that is not taken over. Take over the screen first.',
+      );
+    }
+    const page = await this.getPage(botId);
+    const text = await page.evaluate(() => {
+      // Text selected inside a form field is not reliably part of the document selection, so
+      // check the focused control first — copying out of a login field is a likely reason to be
+      // here in the first place.
+      const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        const { selectionStart: a, selectionEnd: b, value } = el;
+        if (typeof a === 'number' && typeof b === 'number' && b > a) return value.slice(a, b);
+      }
+      return window.getSelection()?.toString() ?? '';
+    });
+    return text.slice(0, MAX_SELECTION_CHARS);
   }
 
   /** One immediate JPEG so a static page is not a blank pane. See startScreencast. */

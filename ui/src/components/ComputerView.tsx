@@ -17,6 +17,7 @@ export function ComputerView() {
   const wsRef = useRef<WebSocket | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const [surfaceFocused, setSurfaceFocused] = useState(false);
+  const [actionNote, setActionNote] = useState<string | null>(null);
 
   useEffect(() => {
     api.computer.status().then((s) => {
@@ -24,6 +25,27 @@ export function ComputerView() {
       if (s.pages.length > 0) setSelectedBotId(s.pages[0].botId);
     });
   }, []);
+
+  /**
+   * Put text the daemon read from the remote page onto the user's clipboard.
+   *
+   * `navigator.clipboard` needs a secure context, which `127.0.0.1` counts as, and recent user
+   * activation — the Ctrl+C keypress that started this. It can still be refused, so failure is
+   * reported rather than swallowed: silently not copying is what made the last round of this
+   * feel broken.
+   */
+  async function writeClipboard(text: string): Promise<void> {
+    if (!text) {
+      setActionNote('Nothing is selected on the remote page.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setActionNote(`Copied ${text.length.toLocaleString()} character${text.length === 1 ? '' : 's'} from the page.`);
+    } catch {
+      setActionNote('The browser refused clipboard access, so the selection was not copied.');
+    }
+  }
 
   useEffect(() => {
     setFrame(null);
@@ -34,14 +56,24 @@ export function ComputerView() {
     wsRef.current = ws;
     ws.onmessage = (ev) => {
       try {
-        const msg = JSON.parse(ev.data as string) as { type: string; data: string; w: number; h: number };
+        const msg = JSON.parse(ev.data as string) as { type: string; data: string; w: number; h: number; text?: string; message?: string };
         if (msg.type === 'frame') setFrame({ data: msg.data, w: msg.w, h: msg.h });
+        // Copy-out: the daemon read the remote page's selection; put it on the real clipboard.
+        else if (msg.type === 'selection') void writeClipboard(msg.text ?? '');
+        else if (msg.type === 'input-error') setActionNote(msg.message ?? 'Input was rejected.');
       } catch {
         // ignore malformed frames
       }
     };
     return () => ws.close();
   }, [selectedBotId, status?.available]);
+
+  // Notes are transient — a stale "Copied 12 characters" is worse than none.
+  useEffect(() => {
+    if (!actionNote) return;
+    const t = setTimeout(() => setActionNote(null), 4000);
+    return () => clearTimeout(t);
+  }, [actionNote]);
 
   // Taking over leaves focus on the button that was clicked, so keystrokes go to the button and
   // nothing reaches the page. Moving focus to the surface is what makes the keyboard work at all
@@ -69,12 +101,16 @@ export function ComputerView() {
 
   /** Send input on the screencast socket. No-ops unless we hold control — the daemon refuses
    *  anyway, but there is no reason to make it say so on every mouse move. */
-  function sendInput(input: ScreencastInput): void {
+  function sendFrame(frame: ScreencastClientFrame): void {
     const ws = wsRef.current;
     if (!controlledByUser || !ws || ws.readyState !== WebSocket.OPEN) return;
     try {
-      ws.send(JSON.stringify({ type: 'input', input } satisfies ScreencastClientFrame));
+      ws.send(JSON.stringify(frame));
     } catch { /* socket went away mid-gesture */ }
+  }
+
+  function sendInput(input: ScreencastInput): void {
+    sendFrame({ type: 'input', input });
   }
 
   /** Pointer position as a fraction of the rendered image — see ScreencastInputSchema for why
@@ -159,6 +195,19 @@ export function ComputerView() {
           // headless browser's, not yours, so forwarding Ctrl+V would paste nothing. Letting the
           // native paste event through instead delivers your clipboard to onPaste below.
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') return;
+
+          // Copy and cut have to round-trip. Your browser would copy its own selection, which is
+          // an image; the page's own copy would land on the headless browser's clipboard, which
+          // you cannot read. So ask the daemon for the page's selection and write that instead.
+          if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'x')) {
+            e.preventDefault();
+            sendFrame({ type: 'selection-request' });
+            // Cut also has to remove the text, and only the page can do that — so the keys still
+            // go through. Copy needs nothing further.
+            if (e.key.toLowerCase() === 'x') sendInput({ kind: 'key', action: 'down', key: e.key });
+            return;
+          }
+
           // Everything else is kept out of the host page: Tab would move focus off the surface,
           // Space and the arrows would scroll this pane instead of the remote one.
           e.preventDefault();
@@ -213,6 +262,12 @@ export function ComputerView() {
       {controlledByUser && !surfaceFocused && (
         <p className="border-t border-(--color-border) bg-(--color-amber)/10 px-3 py-2 text-xs text-(--color-amber)">
           Click the screen to send keystrokes to it.
+        </p>
+      )}
+
+      {actionNote && (
+        <p className="border-t border-(--color-border) bg-(--color-bg-elevated) px-3 py-2 text-xs text-(--color-text-muted)">
+          {actionNote}
         </p>
       )}
     </div>

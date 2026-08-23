@@ -64,8 +64,17 @@ export const ScreencastInputSchema = z.discriminatedUnion('kind', [
 export type ScreencastInput = z.infer<typeof ScreencastInputSchema>;
 
 /** Frames the client may send on the screencast socket. */
-export const ScreencastClientFrameSchema = z.object({
-  type: z.literal('input'),
-  input: ScreencastInputSchema,
-});
+export const ScreencastClientFrameSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('input'), input: ScreencastInputSchema }),
+  /**
+   * Asks for the remote page's current text selection, so the human can copy out of it.
+   *
+   * A round trip is needed because the two clipboards are different: pressing Ctrl+C in the
+   * viewer copies whatever is selected in *your* browser (nothing — the page is a JPEG), and
+   * forwarding Ctrl+C to the page would write to the headless browser's clipboard, which you
+   * have no way to read. So the daemon reads the selection and hands the text back for the
+   * viewer to put on your clipboard.
+   */
+  z.object({ type: z.literal('selection-request') }),
+]);
 export type ScreencastClientFrame = z.infer<typeof ScreencastClientFrameSchema>;

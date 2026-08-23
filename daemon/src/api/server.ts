@@ -125,12 +125,27 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
         } catch {
           return; // malformed frame — ignore rather than tearing down the screencast
         }
-        void app.browser.forwardInput(botId, frame.input).catch((err: unknown) => {
+        const fail = (err: unknown): void => {
           try {
             if (socket.readyState === 1)
               socket.send(JSON.stringify({ type: 'input-error', message: (err as Error).message }));
           } catch { /* ignore */ }
-        });
+        };
+
+        if (frame.type === 'selection-request') {
+          if (!app.browser.readSelection) return;
+          void app.browser
+            .readSelection(botId)
+            .then((text: string) => {
+              try {
+                if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'selection', text }));
+              } catch { /* ignore */ }
+            })
+            .catch(fail);
+          return;
+        }
+
+        void app.browser.forwardInput(botId, frame.input).catch(fail);
       });
 
       socket.on('close', () => stop?.());

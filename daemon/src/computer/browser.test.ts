@@ -306,6 +306,11 @@ describe('takeover before any launch', () => {
     ).rejects.toThrow(ScreenNotTakenOverError);
   });
 
+  it('refuses a selection read for a screen that is not taken over', async () => {
+    const service = new BrowserService({ profileDir: '/tmp/sel-gate-test', bus: new EventBus(), headless: true });
+    await expect(service.readSelection('scout')).rejects.toThrow(ScreenNotTakenOverError);
+  });
+
   it('gates per bot — taking over one screen does not unlock another', async () => {
     const service = new BrowserService({ profileDir: '/tmp/input-gate-test-3', bus: new EventBus(), headless: true });
     await service.takeOver('scout');
@@ -431,6 +436,32 @@ describe.skipIf(!hasChromium)('BrowserService input forwarding (live Chromium)',
           kind: 'mouse', action: 'up', x: 0.25, y: 0.02, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0,
         });
         await service.forwardInput('scout', { kind: 'text', text: 'hello human' });
+
+        // Copy-out: select the field's text in the page and read the selection back. This is the
+        // only way a human gets text off the remote page — the page's own clipboard is the
+        // headless browser's, which the viewer cannot read.
+        await service.forwardInput('scout', { kind: 'key', action: 'down', key: 'Control' });
+        await service.forwardInput('scout', { kind: 'key', action: 'down', key: 'a' });
+        await service.forwardInput('scout', { kind: 'key', action: 'up', key: 'a' });
+        await service.forwardInput('scout', { kind: 'key', action: 'up', key: 'Control' });
+        expect(await service.readSelection('scout')).toBe('hello human');
+
+        // And a selection in ordinary page text, which takes the document-selection path.
+        // getPage, not withScreen: withScreen enforces the takeover gate, and we are inside it.
+        const live = await service.getPage('scout');
+        await live.evaluate(() => {
+            const d = document.createElement('div');
+            d.id = 'para';
+            d.textContent = 'copy me out';
+            document.body.appendChild(d);
+            const r = document.createRange();
+            r.selectNodeContents(d);
+            (document.activeElement as HTMLElement | null)?.blur();
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(r);
+        });
+        expect(await service.readSelection('scout')).toBe('copy me out');
 
         // Read back through the bot-facing API, which refuses while taken over — so this also
         // proves control actually came back.

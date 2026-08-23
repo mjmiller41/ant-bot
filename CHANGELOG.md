@@ -4,6 +4,18 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-08-23
+
+### Added
+
+- **Copy out of a taken-over page.** Ctrl+C puts the remote page's selection on your clipboard,
+  and Ctrl+X copies then lets the page delete. This needs a round trip to the daemon rather than a
+  key forward: your browser's own selection is a JPEG, and the page's clipboard belongs to the
+  headless browser, which you have no way to read. Selections inside form fields are handled too,
+  since copying a value out of a login form is a likely reason to be there.
+- The viewer now reports what happened — how much was copied, that nothing was selected, or that
+  the browser refused clipboard access.
+
 ## [0.1.3] — 2026-08-23
 
 ### Fixed

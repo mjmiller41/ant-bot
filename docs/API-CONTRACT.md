@@ -70,12 +70,16 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
   - `{"type":"error","message":"..."}` — the screencast could not start; the socket then closes.
   - `{"type":"input-error","message":"..."}` — an input frame was rejected. Non-fatal; the
     screencast continues.
+  - `{"type":"selection","text":"..."}` — reply to `selection-request`, capped at 100,000 chars.
 
   Client → server:
   - `{"type":"input","input":{...}}` — human input to dispatch into the page, validated against
     `ScreencastClientFrameSchema` in `@antbot/contract/events.ts`. Coordinates are **normalised**
     (0–1 fractions of the rendered frame), never pixels: neither side knows the other's geometry.
     Malformed frames are ignored rather than closing the socket.
+  - `{"type":"selection-request"}` — asks for the page's current text selection, answered with a
+    `selection` frame. Copy-out needs a round trip because the two clipboards are different: the
+    viewer's own selection is a JPEG, and the page's clipboard belongs to the headless browser.
 
   **Only dispatched while the screen is taken over** (`POST /api/computer/takeover`). Otherwise the
   daemon replies `input-error` and does nothing. Input is the human acting as themselves and does

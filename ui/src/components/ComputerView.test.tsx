@@ -37,6 +37,10 @@ class FakeSocket {
   frame() {
     this.onmessage?.({ data: JSON.stringify({ type: 'frame', data: 'AAAA', w: 1280, h: 720 }) });
   }
+  /** Reply to a selection-request, the way the daemon does. */
+  selection(text: string) {
+    this.onmessage?.({ data: JSON.stringify({ type: 'selection', text }) });
+  }
 }
 
 beforeEach(() => {
@@ -55,6 +59,7 @@ async function renderWithFrame() {
   return await screen.findByAltText('Agent computer screencast');
 }
 
+const frames = () => sent as { type: string }[];
 const inputs = () => sent.filter((m): m is { type: string; input: Record<string, unknown> } =>
   typeof m === 'object' && m !== null && (m as { type?: string }).type === 'input').map((m) => m.input);
 
@@ -113,6 +118,60 @@ describe('ComputerView — takeover surface', () => {
 
     fireEvent.paste(surface, { clipboardData: { getData: () => 'pasted text' } });
     expect(inputs()).toContainEqual({ kind: 'text', text: 'pasted text' });
+  });
+
+  // Copy-out has to round-trip: your browser's own selection is a JPEG, and the page's clipboard
+  // belongs to the headless browser. Ctrl+C must ask the daemon instead of copying locally.
+  it('asks the daemon for the page selection on Ctrl+C and writes it to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+
+    const img = await renderWithFrame();
+    fireEvent.click(screen.getByRole('button', { name: 'Take over' }));
+    const surface = img.parentElement!;
+    await waitFor(() => expect(document.activeElement).toBe(surface));
+
+    const ev = new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true });
+    surface.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(frames()).toContainEqual({ type: 'selection-request' });
+
+    sockets[0]!.selection('text from the page');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('text from the page'));
+    expect(await screen.findByText(/Copied 18 characters/)).toBeInTheDocument();
+  });
+
+  it('says so when nothing is selected rather than silently doing nothing', async () => {
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn() } });
+    const img = await renderWithFrame();
+    fireEvent.click(screen.getByRole('button', { name: 'Take over' }));
+    await waitFor(() => expect(document.activeElement).toBe(img.parentElement));
+
+    sockets[0]!.selection('');
+    expect(await screen.findByText(/Nothing is selected/)).toBeInTheDocument();
+  });
+
+  it('reports a refused clipboard instead of pretending it copied', async () => {
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
+    const img = await renderWithFrame();
+    fireEvent.click(screen.getByRole('button', { name: 'Take over' }));
+    await waitFor(() => expect(document.activeElement).toBe(img.parentElement));
+
+    sockets[0]!.selection('some text');
+    expect(await screen.findByText(/refused clipboard access/)).toBeInTheDocument();
+  });
+
+  // Cut must both copy out and delete, and only the page can delete.
+  it('forwards the key on Ctrl+X as well as asking for the selection', async () => {
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn() } });
+    const img = await renderWithFrame();
+    fireEvent.click(screen.getByRole('button', { name: 'Take over' }));
+    const surface = img.parentElement!;
+    await waitFor(() => expect(document.activeElement).toBe(surface));
+
+    fireEvent.keyDown(surface, { key: 'x', ctrlKey: true });
+    expect(frames()).toContainEqual({ type: 'selection-request' });
+    expect(inputs()).toContainEqual({ kind: 'key', action: 'down', key: 'x' });
   });
 
   it('sends nothing at all before takeover', async () => {
