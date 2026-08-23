@@ -15,6 +15,8 @@ export function ComputerView() {
   const [controlledByUser, setControlledByUser] = useState(false);
   const [takeoverNote, setTakeoverNote] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const [surfaceFocused, setSurfaceFocused] = useState(false);
 
   useEffect(() => {
     api.computer.status().then((s) => {
@@ -40,6 +42,13 @@ export function ComputerView() {
     };
     return () => ws.close();
   }, [selectedBotId, status?.available]);
+
+  // Taking over leaves focus on the button that was clicked, so keystrokes go to the button and
+  // nothing reaches the page. Moving focus to the surface is what makes the keyboard work at all
+  // without the user first guessing that they need to click the image.
+  useEffect(() => {
+    if (controlledByUser) surfaceRef.current?.focus();
+  }, [controlledByUser]);
 
   async function takeover() {
     if (!selectedBotId) return;
@@ -137,55 +146,75 @@ export function ComputerView() {
         </p>
       )}
 
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/20 p-3">
+      <div
+        ref={surfaceRef}
+        // The focusable host is this wrapper, not the image: an <img> is not a keyboard control,
+        // and focus has to survive the image element being re-rendered on every frame.
+        tabIndex={controlledByUser ? 0 : -1}
+        onFocus={() => setSurfaceFocused(true)}
+        onBlur={() => setSurfaceFocused(false)}
+        onKeyDown={(e) => {
+          if (!controlledByUser) return;
+          // Paste is the one shortcut we must NOT swallow. The remote page's clipboard is the
+          // headless browser's, not yours, so forwarding Ctrl+V would paste nothing. Letting the
+          // native paste event through instead delivers your clipboard to onPaste below.
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') return;
+          // Everything else is kept out of the host page: Tab would move focus off the surface,
+          // Space and the arrows would scroll this pane instead of the remote one.
+          e.preventDefault();
+          // A printable character goes as text so the page gets the right glyph whatever the
+          // keyboard layout; named keys and modifiers go as key events, which is what lets
+          // Playwright reconstruct combinations like Ctrl+A on the far side.
+          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) sendInput({ kind: 'text', text: e.key });
+          else sendInput({ kind: 'key', action: 'down', key: e.key });
+        }}
+        onKeyUp={(e) => {
+          if (!controlledByUser) return;
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') return;
+          e.preventDefault();
+          if (!(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey)) sendInput({ kind: 'key', action: 'up', key: e.key });
+        }}
+        onPaste={(e) => {
+          if (!controlledByUser) return;
+          e.preventDefault();
+          const text = e.clipboardData.getData('text');
+          if (text) sendInput({ kind: 'text', text: text.slice(0, 4096) });
+        }}
+        className={`flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/20 p-3 outline-none ${
+          controlledByUser && !surfaceFocused ? 'ring-2 ring-(--color-amber) ring-inset' : ''
+        }`}
+      >
         {frame ? (
           <img
             src={`data:image/jpeg;base64,${frame.data}`}
             width={frame.w}
             height={frame.h}
             alt="Agent computer screencast"
-            // tabIndex makes the image focusable so it can receive key events at all.
-            tabIndex={controlledByUser ? 0 : -1}
             draggable={false}
             onPointerMove={(e) => { const p = normPoint(e); if (p) sendInput({ kind: 'mouse', action: 'move', ...p, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0 }); }}
             onPointerDown={(e) => {
               const p = normPoint(e);
               if (!p) return;
-              e.currentTarget.focus();
+              surfaceRef.current?.focus();
               sendInput({ kind: 'mouse', action: 'down', ...p, button: BUTTONS[e.button] ?? 'left', clickCount: e.detail || 1, deltaX: 0, deltaY: 0 });
             }}
             onPointerUp={(e) => { const p = normPoint(e); if (p) sendInput({ kind: 'mouse', action: 'up', ...p, button: BUTTONS[e.button] ?? 'left', clickCount: e.detail || 1, deltaX: 0, deltaY: 0 }); }}
             onWheel={(e) => { const p = normPoint(e); if (p) sendInput({ kind: 'mouse', action: 'wheel', ...p, button: 'left', clickCount: 1, deltaX: e.deltaX, deltaY: e.deltaY }); }}
             onContextMenu={(e) => { if (controlledByUser) e.preventDefault(); }}
-            onKeyDown={(e) => {
-              if (!controlledByUser) return;
-              // Keep the gesture out of the host page: Tab would move focus out of the view and
-              // Space/arrows would scroll the pane instead of the remote page.
-              e.preventDefault();
-              // A printable character is sent as text so the page receives the right glyph
-              // regardless of keyboard layout; everything else goes as a named key.
-              if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) sendInput({ kind: 'text', text: e.key });
-              else sendInput({ kind: 'key', action: 'down', key: e.key });
-            }}
-            onKeyUp={(e) => {
-              if (!controlledByUser) return;
-              e.preventDefault();
-              if (!(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey)) sendInput({ kind: 'key', action: 'up', key: e.key });
-            }}
-            onPaste={(e) => {
-              if (!controlledByUser) return;
-              e.preventDefault();
-              const text = e.clipboardData.getData('text');
-              if (text) sendInput({ kind: 'text', text: text.slice(0, 4096) });
-            }}
             className={`max-h-full max-w-full rounded border border-(--color-border) ${
-              controlledByUser ? 'cursor-crosshair outline-2 outline-(--color-accent)' : 'pointer-events-none select-none'
+              controlledByUser ? 'cursor-crosshair' : 'pointer-events-none select-none'
             }`}
           />
         ) : (
           <p className="text-sm text-(--color-text-muted)">Waiting for a screencast frame…</p>
         )}
       </div>
+
+      {controlledByUser && !surfaceFocused && (
+        <p className="border-t border-(--color-border) bg-(--color-amber)/10 px-3 py-2 text-xs text-(--color-amber)">
+          Click the screen to send keystrokes to it.
+        </p>
+      )}
     </div>
   );
 }

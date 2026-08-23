@@ -4,6 +4,21 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-08-23
+
+### Fixed
+
+- **Takeover now actually receives the keyboard.** Taking over left focus on the button that was
+  clicked, so keystrokes went to the button and nothing reached the page — only a click on the
+  image made typing work at all. Focus moves to the screencast surface on takeover, and a hint
+  appears if it is ever lost.
+- **Ctrl+V pastes your clipboard.** The keydown was being swallowed, which suppressed the
+  browser's own paste event; forwarding Ctrl+V instead would have pasted the *headless browser's*
+  clipboard, which is not yours. The shortcut is now left alone so the native paste event fires
+  and the text is sent verbatim.
+- Named keys (Backspace, arrows, Enter, Tab) and modifier combinations reach the page reliably
+  now that focus is where it needs to be — the daemon side always handled them correctly.
+
 ## [0.1.2] — 2026-08-23
 
 ### Added
