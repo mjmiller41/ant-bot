@@ -7,6 +7,8 @@ import {
   updateCommand,
   isCheckoutInstall,
   updateNotice,
+  PACKAGE_NAME,
+  REGISTRY_URL,
   checkForUpdate,
   UPDATE_CHECK_TTL_MS,
   type UpdateCache,
@@ -109,11 +111,26 @@ describe('detectPackageManager', () => {
 });
 
 describe('updateCommand', () => {
+  const pkg = `${PACKAGE_NAME}@latest`;
+
   it('uses each package manager\'s own global-install form', () => {
-    expect(updateCommand('npm')).toEqual({ cmd: 'npm', args: ['install', '-g', 'ant-bot@latest'] });
-    expect(updateCommand('pnpm')).toEqual({ cmd: 'pnpm', args: ['add', '-g', 'ant-bot@latest'] });
-    expect(updateCommand('yarn')).toEqual({ cmd: 'yarn', args: ['global', 'add', 'ant-bot@latest'] });
-    expect(updateCommand('bun')).toEqual({ cmd: 'bun', args: ['add', '-g', 'ant-bot@latest'] });
+    expect(updateCommand('npm')).toEqual({ cmd: 'npm', args: ['install', '-g', pkg] });
+    expect(updateCommand('pnpm')).toEqual({ cmd: 'pnpm', args: ['add', '-g', pkg] });
+    expect(updateCommand('yarn')).toEqual({ cmd: 'yarn', args: ['global', 'add', pkg] });
+    expect(updateCommand('bun')).toEqual({ cmd: 'bun', args: ['add', '-g', pkg] });
+  });
+
+  // The scope is load-bearing: unscoped `ant-bot` is refused by npm's similarity guard, so an
+  // update command that lost it would install nothing (or, worse, something else).
+  it('keeps the scope on the package it installs', () => {
+    expect(PACKAGE_NAME).toBe('@michael-joseph-miller/ant-bot');
+    for (const pm of ['npm', 'pnpm', 'yarn', 'bun'] as const) {
+      expect(updateCommand(pm).args.at(-1)).toBe('@michael-joseph-miller/ant-bot@latest');
+    }
+  });
+
+  it('encodes the scope separator in the registry URL', () => {
+    expect(REGISTRY_URL).toBe('https://registry.npmjs.org/%40michael-joseph-miller%2Fant-bot/latest');
   });
 });
 

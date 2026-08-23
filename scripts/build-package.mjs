@@ -19,7 +19,9 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outRoot = path.join(repoRoot, 'dist-npm');
 
-const PACKAGE_NAME = 'ant-bot';
+// Scoped: npm's name-similarity guard rejects the unscoped `ant-bot` as too close to the
+// `antbot` security holding package. Scoped names are exempt from that check.
+const PACKAGE_NAME = '@michael-joseph-miller/ant-bot';
 
 // npm provenance (`npm publish --provenance`) refuses to sign a package whose `repository` does
 // not match the repo the workflow is running in, so this is load-bearing, not metadata polish.
@@ -174,7 +176,9 @@ async function main() {
   // `npm i -g ./dist-npm` looks equivalent and is not: npm *links* a local directory and
   // installs none of its dependencies, so the daemon starts and then cannot load
   // better-sqlite3. Packing first is what reproduces a registry install.
-  console.log('  Test it as a user would:  npm pack ./dist-npm && npm i -g ./ant-bot-' + version + '.tgz');
+  // npm pack flattens a scope into the filename: @a/b -> a-b-1.0.0.tgz
+  const tarball = `${PACKAGE_NAME.replace(/^@/, '').replace('/', '-')}-${version}.tgz`;
+  console.log(`  Test it as a user would:  npm pack ./dist-npm && npm i -g ./${tarball}`);
   console.log('  Publish:                  npm publish ./dist-npm --access public');
 }
 

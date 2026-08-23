@@ -9,8 +9,11 @@
 // decides; the I/O wrapper fetches, caches and spawns.
 import path from 'node:path';
 
-export const PACKAGE_NAME = 'ant-bot';
-export const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
+// Scoped, because npm rejects `ant-bot` as too similar to the pre-existing `antbot` holding
+// package. The *binary* is still `antbot`; only the install/update command carries the scope.
+export const PACKAGE_NAME = '@michael-joseph-miller/ant-bot';
+// encodeURIComponent so the scope separator reaches the registry as %2F.
+export const REGISTRY_URL = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/latest`;
 
 /** Once a day. A local-first tool has no business talking to a registry more often than that. */
 export const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1000;
@@ -57,7 +60,7 @@ export function compareVersions(a: string, b: string): number {
 /**
  * Whether `latest` is worth telling the user about. A stable install is never nudged onto a
  * prerelease, however the registry's `latest` tag happens to be pointed — that is a choice the
- * user makes deliberately with `npm i -g ant-bot@next`.
+ * user makes deliberately with `npm i -g @michael-joseph-miller/ant-bot@next`.
  */
 export function isUpgrade(current: string, latest: string): boolean {
   const c = parse(current);

@@ -29,6 +29,12 @@ All notable changes to ant-bot are recorded here. The format follows
 - `antbot --version` and `GET /api/health` read the version from `package.json` instead of a
   hardcoded constant, so a release bump cannot leave them disagreeing.
 
+### Notes
+
+- Published as **`@michael-joseph-miller/ant-bot`**, not `ant-bot`. npm's name-similarity guard
+  refuses the unscoped name as too close to `antbot`, a security holding package from 2022 that
+  cannot be claimed. Scoped names are exempt from that check. The binary is still `antbot`.
+
 ## [0.1.0]
 
 Initial version: the ant-bot daemon, web UI and CLI.

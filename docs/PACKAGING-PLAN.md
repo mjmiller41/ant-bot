@@ -6,13 +6,16 @@ edited as the work lands, and deleted once it is all done. What remains is in
 [Left to do](#left-to-do) at the bottom.
 
 **The decision:** ant-bot ships to end users as **one bundled npm package**, installed with
-`npm i -g ant-bot`. The repo checkout plus `./antbot` stays exactly as it is and becomes the
+`npm i -g @michael-joseph-miller/ant-bot`. The repo checkout plus `./antbot` stays exactly as it is and becomes the
 contributor path.
 
-> **Name change from the original plan.** `antbot` on npm is a *security holding package*
-> (`0.0.1-security`, published 2022), so it cannot be claimed. The published name is **`ant-bot`**,
-> matching the repo and the `~/.ant-bot` data directory. The binary is still `antbot`, so every
-> command in the docs is unchanged.
+> **Name, and two failed attempts at it.** `antbot` is a *security holding package*
+> (`0.0.1-security`, 2022) and cannot be claimed. `ant-bot` looked free — the registry returns 404
+> — but a 404 only means *unpublished*: npm runs a name-**similarity** check that normalises away
+> the hyphen, and it refused `ant-bot` with a 403 at publish time. That check cannot be tested
+> except by attempting a real publish. Scoped names are exempt from it, so the published name is
+> **`@michael-joseph-miller/ant-bot`**. The binary is still `antbot`, so every command in the docs
+> is unchanged.
 
 ## Why this shape
 

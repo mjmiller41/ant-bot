@@ -119,7 +119,8 @@ claude                               # log in once, then exit
 UI and the bundled skills.
 
 ```bash
-npm i -g ant-bot        # or: pnpm add -g ant-bot, yarn global add ant-bot, bun add -g ant-bot
+npm i -g @michael-joseph-miller/ant-bot
+# or: pnpm add -g / yarn global add / bun add -g, same name
 ```
 
 <details>
@@ -215,7 +216,7 @@ runs this for you), `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm e2e`, and 
 antbot <command> [options]
 ```
 
-Plain `antbot` after `npm i -g ant-bot`, or `./antbot` from a checkout (see
+Plain `antbot` after `npm i -g @michael-joseph-miller/ant-bot`, or `./antbot` from a checkout (see
 [section 2](#2-installation-and-first-run)). Day to day you need two of these: `antbot open` to get to work, and `antbot doctor` when something is wrong.
 
 | Command | What it does |

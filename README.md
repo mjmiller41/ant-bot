@@ -55,7 +55,7 @@ change it.
 ### Install it (npm)
 
 ```bash
-npm i -g ant-bot      # or: pnpm add -g ant-bot
+npm i -g @michael-joseph-miller/ant-bot      # or: pnpm add -g @michael-joseph-miller/ant-bot
 antbot doctor         # check Node, the claude CLI + login, data dir, port, native deps
 antbot open           # start the daemon and open the UI
 ```

@@ -85,7 +85,7 @@ export function planMigrations(currentVersion: number, migrations: Migration[]):
     throw new MigrationError(
       'MIGRATION_DOWNGRADE',
       `database is at schema version ${currentVersion} but this build only knows up to ${latest}. ` +
-        `Upgrade ant-bot (npm i -g ant-bot) rather than downgrading the database.`,
+        `Upgrade ant-bot (npm i -g @michael-joseph-miller/ant-bot) rather than downgrading the database.`,
     );
   }
 
