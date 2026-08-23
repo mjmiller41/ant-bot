@@ -1,0 +1,26 @@
+{
+  "name": "ant-bot",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.17.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "pnpm -r build",
+    "prepare": "pnpm run build",
+    "antbot": "node packages/cli/dist/index.js",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint packages --ext .ts,.tsx",
+    "dev": "pnpm --filter @antbot/server dev",
+    "e2e": "pnpm --filter @antbot/web e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "eslint": "^9.39.0",
+    "@typescript-eslint/parser": "^8.46.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.0",
+    "prettier": "^3.6.2"
+  }
+}

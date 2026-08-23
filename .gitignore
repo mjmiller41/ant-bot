@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.antbot-test/
+test-results/
+playwright-report/
+.DS_Store
+*.log
+
+# scratch staged for deletion
+.trash

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# antbot — repo-root launcher.
+#
+# Runs the antbot CLI straight from a checkout, building it first if the
+# compiled output is missing or the sources are newer. This is what the
+# quickstart uses so there is nothing to install globally.
+set -euo pipefail
+
+# Resolve symlinks so this still works when linked onto your PATH.
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  target="$(readlink -- "$self")"
+  case "$target" in
+    /*) self="$target" ;;
+    *)  self="$(dirname -- "$self")/$target" ;;
+  esac
+done
+repo_root="$(cd -- "$(dirname -- "$self")" && pwd)"
+entry="$repo_root/packages/cli/dist/index.js"
+
+needs_build() {
+  [ -f "$entry" ] || return 0
+  # Rebuild when any package source is newer than the compiled CLI entry.
+  [ -n "$(find "$repo_root/packages" -name node_modules -prune -o \
+            -name dist -prune -o \
+            -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) -newer "$entry" -print -quit)" ]
+}
+
+if needs_build; then
+  if [ ! -d "$repo_root/node_modules" ]; then
+    echo "antbot: dependencies are not installed. Run 'pnpm install' first." >&2
+    exit 1
+  fi
+  echo "antbot: building..." >&2
+  build_log="$(mktemp)"
+  if ! (cd "$repo_root" && pnpm run build) >"$build_log" 2>&1; then
+    echo "antbot: build failed." >&2
+    cat "$build_log" >&2
+    rm -f "$build_log"
+    exit 1
+  fi
+  rm -f "$build_log"
+fi
+
+exec node "$entry" "$@"

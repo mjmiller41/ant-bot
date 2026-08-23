@@ -1,0 +1,13 @@
+{
+  "name": "@antbot/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "antbot": "./dist/index.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": { "@antbot/server": "workspace:*", "@antbot/shared": "workspace:*" },
+  "devDependencies": { "@types/node": "^24.7.0", "typescript": "^5.9.3", "vitest": "^3.2.4" }
+}

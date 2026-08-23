@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #0b0d10;
+  --color-bg-elevated: #14171c;
+  --color-bg-hover: #1b1f26;
+  --color-border: #262b33;
+  --color-text: #e6e9ef;
+  --color-text-muted: #8b93a1;
+  --color-text-faint: #5a616e;
+  --color-accent: #6c8cff;
+  --color-accent-fg: #0b0d10;
+  --color-amber: #f0b429;
+  --color-red: #f2545b;
+  --color-green: #3fb950;
+  --color-blue: #58a6ff;
+}
+
+:root.light {
+  --color-bg: #f6f7f9;
+  --color-bg-elevated: #ffffff;
+  --color-bg-hover: #eef0f3;
+  --color-border: #dde1e7;
+  --color-text: #14171c;
+  --color-text-muted: #565e6b;
+  --color-text-faint: #8b93a1;
+  --color-accent: #3358e0;
+  --color-accent-fg: #ffffff;
+  --color-amber: #b3760a;
+  --color-red: #c8323a;
+  --color-green: #22863a;
+  --color-blue: #0969da;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* The app shell sizes itself to the viewport and scrolls internally; a document-level
+     scrollbar here would drag the top bar and composer out of view. */
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family:
+    'Inter',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre,
+.font-mono {
+  font-family:
+    ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    'Liberation Mono',
+    monospace;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.markdown-body p {
+  margin: 0 0 0.5em 0;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body pre {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+}
+.markdown-body code {
+  background: var(--color-bg);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+}
+.markdown-body a {
+  color: var(--color-blue);
+}
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.4em;
+  margin: 0 0 0.5em 0;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  margin: 0.6em 0 0.3em 0;
+  font-weight: 600;
+}
+.markdown-body blockquote {
+  border-left: 3px solid var(--color-border);
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  color: var(--color-text-muted);
+}
