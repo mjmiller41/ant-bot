@@ -4,6 +4,8 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import type { BrowserContext, CDPSession, Page } from 'playwright';
 import type { EventBus } from '../util/bus.js';
+import { toPageCoords, isForwardableKey, clampWheel, type FrameSize } from './input.js';
+import type { ScreencastInput } from '@antbot/contract';
 import { logger } from '../util/log.js';
 
 const log = logger('browser');
@@ -37,6 +39,13 @@ export class InvalidUrlError extends Error {
 }
 
 /** Thrown when an action targets a bot screen the human currently has taken over. */
+export class ScreenNotTakenOverError extends Error {
+  constructor(message = 'This screen is not taken over.') {
+    super(message);
+    this.name = 'ScreenNotTakenOverError';
+  }
+}
+
 export class ScreenTakenOverError extends Error {
   constructor() {
     super('The human has taken control of this screen; wait until they return it.');
@@ -208,6 +217,14 @@ export class BrowserService {
   private readonly screencastListeners = new Map<string, Set<FrameListener>>();
   private readonly screencastThrottles = new Map<string, FrameThrottle>();
   private readonly viewerCounts = new Map<string, number>();
+  /**
+   * Last known viewport, per bot. Seeded from the page and refreshed by screencast frames.
+   * Input coordinates scale against this, NOT against frame arrival: Chromium only emits
+   * screencast frames on visual change, so a static page delivers none at all and a
+   * frame-dependent geometry would drop every click on exactly the pages a human is most
+   * likely to be rescuing (a login form sitting still, waiting for input).
+   */
+  private readonly lastFrameSize = new Map<string, FrameSize>();
 
   constructor(private readonly deps: BrowserServiceDeps) {
     this.headlessMode = deps.headless ?? true;
@@ -504,9 +521,13 @@ export class BrowserService {
 
       session.on('Page.screencastFrame', (evt) => {
         void session.send('Page.screencastFrameAck', { sessionId: evt.sessionId }).catch(() => {});
-        if (!throttle.shouldEmit()) return;
         const w = evt.metadata?.deviceWidth ?? 0;
         const h = evt.metadata?.deviceHeight ?? 0;
+        // Recorded on every frame, before the throttle: input must scale against the page's
+        // current geometry, which changes on resize and navigation regardless of what the
+        // viewer happens to be shown.
+        if (w > 0 && h > 0) this.lastFrameSize.set(botId, { width: w, height: h });
+        if (!throttle.shouldEmit()) return;
         for (const l of listeners!) {
           try {
             l(evt.data, w, h);
@@ -517,6 +538,12 @@ export class BrowserService {
       });
 
       await session.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: 1280, everyNthFrame: 2 });
+
+      // Chromium emits screencast frames only when something repaints, so a page sitting still
+      // — a login form, a 2FA prompt, exactly what a human takes over to deal with — delivers
+      // nothing and the viewer stays blank forever. Seed it with one screenshot so there is
+      // always something on screen; live frames take over from there.
+      void this.seedFirstFrame(botId, page).catch((err) => log.warn('screencast seed frame failed', err));
     }
 
     let stopped = false;
@@ -532,6 +559,7 @@ export class BrowserService {
       this.screencastSessions.delete(botId);
       this.screencastThrottles.delete(botId);
       this.screencastListeners.delete(botId);
+      this.lastFrameSize.delete(botId);
       if (session) {
         void session
           .send('Page.stopScreencast')
@@ -583,6 +611,99 @@ export class BrowserService {
 
   returnControl(botId: string): void {
     this.takenOver.delete(botId);
+  }
+
+  /** One immediate JPEG so a static page is not a blank pane. See startScreencast. */
+  private async seedFirstFrame(botId: string, page: Page): Promise<void> {
+    const listeners = this.screencastListeners.get(botId);
+    if (!listeners?.size) return;
+    const buf = await page.screenshot({ type: 'jpeg', quality: 60 });
+    const vp = page.viewportSize() ?? { width: 0, height: 0 };
+    if (vp.width > 0 && vp.height > 0) this.lastFrameSize.set(botId, vp);
+    for (const l of listeners) {
+      try {
+        l(buf.toString('base64'), vp.width, vp.height);
+      } catch (err) {
+        log.warn('screencast seed listener threw', err);
+      }
+    }
+  }
+
+  /**
+   * The page's CSS viewport, which is what input coordinates are in.
+   *
+   * `viewportSize()` is synchronous and correct whenever the context sets one; a persistent
+   * context launched without an explicit viewport returns null, so fall back to asking the page.
+   * The cached value is only a last resort for a page that has since closed.
+   */
+  private async viewportOf(botId: string, page: Page): Promise<FrameSize | undefined> {
+    const vp = page.viewportSize();
+    if (vp && vp.width > 0 && vp.height > 0) {
+      this.lastFrameSize.set(botId, { width: vp.width, height: vp.height });
+      return vp;
+    }
+    try {
+      const inner = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+      if (inner.width > 0 && inner.height > 0) {
+        this.lastFrameSize.set(botId, inner);
+        return inner;
+      }
+    } catch { /* page closed or navigating */ }
+    return this.lastFrameSize.get(botId);
+  }
+
+  /**
+   * Dispatches human input into a taken-over page.
+   *
+   * The takeover check is the whole security model here, and it is deliberately a hard refusal
+   * rather than a queue: input is only ever legitimate while the bot is blocked, and silently
+   * buffering it would let a stale click land after control was returned — into a page the bot
+   * has since navigated. Input does not pass the Permission Gateway, because the gateway governs
+   * what *bots* do; this is the human acting as themselves on their own computer.
+   *
+   * Dispatch goes through Playwright's `page.mouse` / `page.keyboard` rather than raw CDP so the
+   * key-code mapping is the SDK's problem, matching how `click()` and `type()` above work.
+   */
+  async forwardInput(botId: string, ev: ScreencastInput): Promise<void> {
+    if (!this.takenOver.has(botId)) {
+      throw new ScreenNotTakenOverError(
+        'Input was sent for a screen that is not taken over. Take over the screen first.',
+      );
+    }
+    const page = await this.getPage(botId);
+
+    if (ev.kind === 'text') {
+      await page.keyboard.insertText(ev.text);
+      return;
+    }
+
+    if (ev.kind === 'key') {
+      if (!isForwardableKey(ev.key)) return;
+      if (ev.action === 'down') await page.keyboard.down(ev.key);
+      else await page.keyboard.up(ev.key);
+      return;
+    }
+
+    const pt = toPageCoords({ x: ev.x, y: ev.y }, await this.viewportOf(botId, page));
+    // Geometry genuinely unknown — a guessed coordinate is a click the human did not aim.
+    if (!pt) return;
+
+    switch (ev.action) {
+      case 'move':
+        await page.mouse.move(pt.x, pt.y);
+        break;
+      case 'down':
+        await page.mouse.move(pt.x, pt.y);
+        await page.mouse.down({ button: ev.button, clickCount: Math.max(1, ev.clickCount) });
+        break;
+      case 'up':
+        await page.mouse.up({ button: ev.button, clickCount: Math.max(1, ev.clickCount) });
+        break;
+      case 'wheel':
+        await page.mouse.move(pt.x, pt.y);
+        await page.mouse.wheel(clampWheel(ev.deltaX), clampWheel(ev.deltaY));
+        break;
+    }
   }
 
   /* ---------------------------------------------------------------------------------------- */

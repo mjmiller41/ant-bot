@@ -10,7 +10,7 @@ import { createApp, drainMailbox, type App } from '../app.js';
 import { registerCoreRoutes } from './routes-core.js';
 import { registerOpsRoutes } from './routes-ops.js';
 import { logger } from '../util/log.js';
-import { LIMITS } from '@antbot/contract';
+import { LIMITS, ScreencastClientFrameSchema } from '@antbot/contract';
 import { findWebDist, nodeLocateDeps } from '../util/locate.js';
 
 const log = logger('server');
@@ -114,6 +114,25 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
         socket.close();
         return;
       }
+      // The socket is bidirectional: frames stream out, and human input comes back in while the
+      // screen is taken over. Validated against the shared schema rather than trusted, because
+      // this is the one place a browser can ask the daemon to act on a page.
+      socket.on('message', (raw: Buffer) => {
+        if (!app.browser?.forwardInput) return;
+        let frame;
+        try {
+          frame = ScreencastClientFrameSchema.parse(JSON.parse(raw.toString()));
+        } catch {
+          return; // malformed frame — ignore rather than tearing down the screencast
+        }
+        void app.browser.forwardInput(botId, frame.input).catch((err: unknown) => {
+          try {
+            if (socket.readyState === 1)
+              socket.send(JSON.stringify({ type: 'input-error', message: (err as Error).message }));
+          } catch { /* ignore */ }
+        });
+      });
+
       socket.on('close', () => stop?.());
       socket.on('error', () => stop?.());
     });

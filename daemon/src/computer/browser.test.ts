@@ -11,6 +11,7 @@ import {
   InvalidUrlError,
   ScreenBusyError,
   ScreenLock,
+  ScreenNotTakenOverError,
   detectBlockFromSignals,
   normalizeUrl,
 } from './browser.js';
@@ -283,6 +284,35 @@ describe('takeover before any launch', () => {
     service.returnControl('scout');
     expect(service.isTakenOver('scout')).toBe(false);
   });
+
+  // The gate is the entire security model for input forwarding: while a bot is running, the
+  // screencast must be a window, not a control surface. A hard refusal rather than a queue,
+  // so a click sent late cannot land after control was returned.
+  it('refuses input for a screen that is not taken over', async () => {
+    const service = new BrowserService({ profileDir: '/tmp/input-gate-test', bus: new EventBus(), headless: true });
+    await expect(
+      service.forwardInput('scout', {
+        kind: 'mouse', action: 'down', x: 0.5, y: 0.5, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0,
+      }),
+    ).rejects.toThrow(ScreenNotTakenOverError);
+  });
+
+  it('stops accepting input again once control is returned', async () => {
+    const service = new BrowserService({ profileDir: '/tmp/input-gate-test-2', bus: new EventBus(), headless: true });
+    await service.takeOver('scout');
+    service.returnControl('scout');
+    await expect(
+      service.forwardInput('scout', { kind: 'text', text: 'hello' }),
+    ).rejects.toThrow(ScreenNotTakenOverError);
+  });
+
+  it('gates per bot — taking over one screen does not unlock another', async () => {
+    const service = new BrowserService({ profileDir: '/tmp/input-gate-test-3', bus: new EventBus(), headless: true });
+    await service.takeOver('scout');
+    await expect(
+      service.forwardInput('planner', { kind: 'key', action: 'down', key: 'Enter' }),
+    ).rejects.toThrow(ScreenNotTakenOverError);
+  });
 });
 
 /* ------------------------------------------------------------------------------------------- *
@@ -341,6 +371,78 @@ describe.skipIf(!hasChromium)('BrowserService (live Chromium)', () => {
         const status = service.status();
         expect(status.available).toBe(true);
         expect(status.pages.some((p) => p.botId === 'scout')).toBe(true);
+      } finally {
+        await service.shutdown();
+        fs.rmSync(profileDir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+});
+
+/* ------------------------------------------------------------------------------------------- *
+ * Input forwarding, against a real page. The pure coordinate maths is covered in input.test.ts;
+ * what only a live browser can prove is that a normalised point actually lands on the element the
+ * human aimed at, and that typed text reaches the focused field.
+ * ------------------------------------------------------------------------------------------- */
+describe.skipIf(!hasChromium)('BrowserService input forwarding (live Chromium)', () => {
+  it(
+    'clicks and types into the page the human took over',
+    async () => {
+      const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antbot-input-test-'));
+      const service = new BrowserService({ profileDir, bus: new EventBus(), headless: true });
+
+      try {
+        // A button filling the right half, and a text input, so a click at x=0.75 is
+        // unambiguous — it can only land if the coordinate scaling is right.
+        await service.navigate(
+          'scout',
+          'data:text/html,' +
+            encodeURIComponent(
+              `<html><body style="margin:0">
+                 <div id="out"></div>
+                 <input id="field" style="position:absolute;top:0;left:0;width:50%;height:40px">
+                 <button id="btn" style="position:absolute;top:0;right:0;width:50%;height:40px"
+                         onclick="document.getElementById('out').textContent='clicked'">go</button>
+               </body></html>`,
+            ),
+        );
+
+        // Chromium emits no screencast frames for a page that never repaints, so the seeded
+        // first frame is the only thing standing between a human and a blank pane here.
+        let frames = 0;
+        const stop = await service.startScreencast('scout', () => { frames++; });
+        await expect.poll(() => frames, { timeout: 5000 }).toBeGreaterThan(0);
+
+        await service.takeOver('scout');
+
+        // Right half, near the top — the button.
+        await service.forwardInput('scout', {
+          kind: 'mouse', action: 'down', x: 0.75, y: 0.02, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0,
+        });
+        await service.forwardInput('scout', {
+          kind: 'mouse', action: 'up', x: 0.75, y: 0.02, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0,
+        });
+        // Left half — the input. Click to focus, then type.
+        await service.forwardInput('scout', {
+          kind: 'mouse', action: 'down', x: 0.25, y: 0.02, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0,
+        });
+        await service.forwardInput('scout', {
+          kind: 'mouse', action: 'up', x: 0.25, y: 0.02, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0,
+        });
+        await service.forwardInput('scout', { kind: 'text', text: 'hello human' });
+
+        // Read back through the bot-facing API, which refuses while taken over — so this also
+        // proves control actually came back.
+        service.returnControl('scout');
+        await expect.poll(() => service.readText('scout'), { timeout: 5000 }).toMatch(/clicked/);
+
+        const typed = await service.withScreen('scout', (page) =>
+          page.$eval('#field', (el) => (el as HTMLInputElement).value),
+        );
+        expect(typed).toBe('hello human');
+
+        stop();
       } finally {
         await service.shutdown();
         fs.rmSync(profileDir, { recursive: true, force: true });

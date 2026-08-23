@@ -1226,11 +1226,18 @@ first boot has no effect, and UI changes are never written back to it.
   the client, but nothing renders it — so you will not be prompted. The Bot's message will mention
   it; supply the value with the API. (And per above, the value still will not reach the Bot.)
 
-### Browser takeover is incomplete
+### Browser takeover forwards input, but the view is a video feed
 
-The browser runs headless, and the screencast is view-only. Taking over correctly *blocks the Bot*
-from acting on that page, but your clicks and keystrokes are not forwarded, so you cannot complete
-the blocked step from within ant-bot.
+Taking over blocks the Bot from that page and gives you the mouse and keyboard: clicks, typing,
+scrolling and paste are forwarded into the page, so you can finish a login, a 2FA prompt or a
+CAPTCHA and hand control back.
+
+What it is not is a real browser window. The view is a throttled JPEG screencast, so it is lower
+fidelity and less responsive than driving Chromium directly, and browser-level keys (`F5`, `F11`,
+`F12`, and the back/forward media keys) are deliberately not forwarded — they would navigate away
+from or hide the page you took over to rescue. There is no separate window to switch to: the
+browser is headless, and Chromium locks the profile so a second headed copy cannot be opened
+against it.
 
 ### The away-guard never fires
 

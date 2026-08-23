@@ -35,8 +35,8 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 34 test files / 640 tests passing**
-(shared 22, server 450, web 52, cli 116). The table in `README.md` matches; if you touch it,
+Baseline as of this checkout: **build clean, typecheck clean, 35 test files / 658 tests passing**
+(contract 22, daemon 468, ui 52, cli 116). The table in `README.md` matches; if you touch it,
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
@@ -130,6 +130,13 @@ must go through it — without it the `browser_click`, `browser_type`, `install_
 **Subscription billing.** `buildEnv()` in `agent/session.ts` strips `ANTHROPIC_API_KEY` and
 `ANTHROPIC_AUTH_TOKEN` from every subprocess env unless `settings.billingMode === 'api'`. Every
 `query()` call site must use it — `session.ts`, `autoreview.ts` and `groups.ts` all do.
+
+**Screencast input is gated on takeover, and that gate is the whole security model.**
+`BrowserService.forwardInput()` refuses with `ScreenNotTakenOverError` unless `takeOver()` is
+active for that bot — a hard refusal, never a queue, so a click sent late cannot land after
+control was returned into a page the bot has since navigated. Input does not pass the Permission
+Gateway on purpose: the gateway governs what *bots* do, and this is the human acting as
+themselves. Do not add a path that dispatches input without that check.
 
 **Secrets never enter the model's context.** `request_secret` returns a confirmation string only.
 `GET /api/secrets` returns names, never values. Do not add anything that puts a value in a
@@ -241,6 +248,11 @@ where schema SQL lives by definition.
 - **Boot performs crash recovery** in `startServer()`: running/queued bots reset to idle, streaming
   messages closed, pending approvals expired, running routine runs marked interrupted, mailbox
   drained. Anything you add that survives a restart belongs there.
+- **Chromium emits screencast frames only on repaint.** A page sitting still — a login form, a
+  2FA prompt, precisely what a human takes over to deal with — produces *none*, so the viewer
+  would stay blank forever. `startScreencast()` seeds one `page.screenshot()` frame on connect to
+  cover that. For the same reason, input coordinates scale against `page.viewportSize()`, never
+  against the last frame: frame-derived geometry is absent exactly when it is needed.
 - **`browser.test.ts` launches real Chromium** (39 tests, one live). It is not hermetic — a machine
   without `npx playwright install chromium` will behave differently.
 - **`daemon/.smoke/*.mjs` are live scripts**, not tests. They need a running daemon and a
@@ -276,7 +288,7 @@ claim below by grep. Treat these as unimplemented, not as bugs to work around:
 | Away-guard | `checkAndApplyAwayGuard()` is tested but never called by the running server |
 | Group thread creation | works over `POST /api/threads`; no UI affordance |
 | Skill authoring/installing from the UI | CLI, API, or `skills/` dir only; assignment does work in the UI |
-| Browser takeover | correctly blocks the bot, but headless + view-only screencast means input is not forwarded |
+
 | Teach-by-demonstration, webhook triggers, mobile, multi-user | not started |
 | No URL routing | screens are in-app state; refresh returns to Chats |
 

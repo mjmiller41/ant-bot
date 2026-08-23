@@ -4,6 +4,25 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Browser takeover forwards mouse and keyboard.** The screencast websocket is now
+  bidirectional: clicks, typing, scrolling and paste are dispatched into the page while a screen
+  is taken over, so a human can finish a login or 2FA prompt and hand control back. Gated on
+  takeover with a hard refusal — input is never queued, so a late click cannot land after control
+  was returned. Closes the takeover gap in USER-GUIDE §22.
+
+### Fixed
+
+- **The screencast no longer sits blank on a static page.** Chromium emits frames only on
+  repaint, so a page that was not moving — a login form waiting for input, the exact case
+  takeover exists for — delivered nothing at all. One screenshot is now seeded on connect.
+- **Taking over says what it did.** The daemon has always returned an explanation ("this computer
+  is running headless, there is no window to bring to the front…"); the UI discarded it, so the
+  button flipped to "Return control" and nothing told you what had changed.
+
 ## [0.1.1] — 2026-08-23
 
 ### Changed

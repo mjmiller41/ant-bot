@@ -62,8 +62,24 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 
 - `GET /api/events` (ws) — server pushes `ServerEvent` JSON frames.
   Client may send `{"type":"resume","seq":N}` once on connect to replay missed events.
-- `GET /api/computer/screencast/:botId` (ws) — server pushes
-  `{"type":"frame","data":"<base64 jpeg>","w":N,"h":N}`.
+- `GET /api/computer/screencast/:botId` (ws) — **bidirectional.**
+
+  Server → client:
+  - `{"type":"frame","data":"<base64 jpeg>","w":N,"h":N}` — one frame is always sent on connect,
+    because Chromium emits screencast frames only on repaint and a static page produces none.
+  - `{"type":"error","message":"..."}` — the screencast could not start; the socket then closes.
+  - `{"type":"input-error","message":"..."}` — an input frame was rejected. Non-fatal; the
+    screencast continues.
+
+  Client → server:
+  - `{"type":"input","input":{...}}` — human input to dispatch into the page, validated against
+    `ScreencastClientFrameSchema` in `@antbot/contract/events.ts`. Coordinates are **normalised**
+    (0–1 fractions of the rendered frame), never pixels: neither side knows the other's geometry.
+    Malformed frames are ignored rather than closing the socket.
+
+  **Only dispatched while the screen is taken over** (`POST /api/computer/takeover`). Otherwise the
+  daemon replies `input-error` and does nothing. Input is the human acting as themselves and does
+  not pass the Permission Gateway, which governs what *bots* do — see `SECURITY.md`.
 
 `ServerEvent` union is defined in `@antbot/contract/events.ts`. Every event carries
 `seq`, `threadId` (nullable), `botId` (nullable).
