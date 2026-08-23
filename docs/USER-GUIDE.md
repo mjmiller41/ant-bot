@@ -1197,8 +1197,14 @@ first boot has no effect, and UI changes are never written back to it.
   to Bots does work in the UI.
 - **Secrets have no screen.** Manage them with the API calls in [section 14](#14-secrets).
 - **The update check is command-line only.** `antbot status`, `antbot doctor` and `antbot update`
-  report a newer version; Settings does not. Surfacing it there needs an API endpoint, and the
-  HTTP contract is frozen — see `docs/API-CONTRACT.md`.
+  report a newer version; Settings does not. Surfacing it in the UI needs a new API endpoint, and
+  the HTTP contract is frozen (`docs/API-CONTRACT.md`) — so that is a deliberate decision someone
+  has to make, not an oversight.
+- **npm is the only distribution channel.** `npm i -g @michael-joseph-miller/ant-bot` (or pnpm,
+  yarn, bun) and a git checkout are the two ways in. There is no Homebrew tap, no AUR package, and
+  no standalone binary — `better-sqlite3` is a native addon and Playwright ships per-platform
+  drivers, so a single-file build would mean a per-platform release matrix to avoid a Node
+  dependency you already have.
 - **A Bot's `request_secret` call is invisible.** The request reaches the browser and is stored in
   the client, but nothing renders it — so you will not be prompted. The Bot's message will mention
   it; supply the value with the API. (And per above, the value still will not reach the Bot.)

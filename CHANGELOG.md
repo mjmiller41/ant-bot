@@ -4,7 +4,9 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] — 2026-08-23
+
+First published release: `npm i -g @michael-joseph-miller/ant-bot`.
 
 ### Added
 
@@ -34,7 +36,5 @@ All notable changes to ant-bot are recorded here. The format follows
 - Published as **`@michael-joseph-miller/ant-bot`**, not `ant-bot`. npm's name-similarity guard
   refuses the unscoped name as too close to `antbot`, a security holding package from 2022 that
   cannot be claimed. Scoped names are exempt from that check. The binary is still `antbot`.
-
-## [0.1.0]
-
-Initial version: the ant-bot daemon, web UI and CLI.
+- The release procedure, the provenance requirements and the packaging traps now live in
+  `CLAUDE.md` under "Releasing"; `docs/PACKAGING-PLAN.md` has served its purpose and is deleted.

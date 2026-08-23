@@ -282,6 +282,51 @@ Nothing authenticates the API. It binds to `127.0.0.1` for exactly that reason �
 
 ---
 
+## Releasing
+
+ant-bot publishes as **`@michael-joseph-miller/ant-bot`** — scoped, because npm's name-similarity
+guard refuses the unscoped `ant-bot` as too close to `antbot`, a 2022 security holding package that
+cannot be claimed. That check normalises punctuation away, runs *only* at publish time, and cannot
+be probed: a 404 from the registry means "unpublished", never "publishable". The binary is still
+`antbot`; only install and update commands carry the scope.
+
+To cut a release:
+
+```bash
+# bump the version in the ROOT package.json and every packages/*/package.json together
+#   (version.test.ts fails if they drift; the root is the source of truth)
+# write the CHANGELOG entry, then:
+git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z
+```
+
+`.github/workflows/release.yml` reruns the full lint/typecheck/test gate, checks the tag against
+`package.json`, assembles `dist-npm/`, packs, and publishes with provenance. It never publishes
+something that would have failed CI. A `workflow_dispatch` run with `dry-run: true` does everything
+except the upload and leaves the tarball as an artifact.
+
+**Provenance needs three things**, and losing any one fails the last step after everything else has
+passed: `id-token: write` on the job, a **public** repo (Sigstore issues no attestation for a
+private one), and a `repository` field in the *published* manifest matching this repo.
+`assertPublishable()` in `scripts/build-package.mjs` fails the build on the last one so it surfaces
+locally in a second rather than after tagging.
+
+**Two ways to "install it and check" that do not work:**
+
+- `npm i -g .` from the repo root installs the *workspace*, which npm symlinks into global
+  `node_modules`. No binary (the root has no `bin`), and confusing `prepare` script warnings. The
+  root is named `ant-bot-workspace` precisely so this cannot shadow a real install.
+- `npm i -g ./dist-npm` is worse because it half-works: npm link-installs a local directory and
+  fetches **none** of its dependencies, so `antbot` runs and the daemon dies on `better-sqlite3`.
+
+Only a packed tarball reproduces a registry install — `pnpm build:package` prints the exact
+`npm pack && npm i -g` line, with the scope flattened the way npm names the file.
+
+Registry replication lags: after a successful publish, `/latest` and `/<version>` answer while the
+aggregated packument (what `npm install` fetches) still 404s for a few minutes. That is not a
+failed publish.
+
+---
+
 ## Documentation duty
 
 The docs in this repo are unusually accurate and specific, and that is the point — they are written
@@ -295,10 +340,6 @@ to be trusted. If your change alters behavior they describe, update them in the 
 | `docs/SKILLS.md` / `skills/README.md` | the skill format, install sources, or the plugin layout |
 | `README.md` | commands, layout, requirements, the Status section |
 | `CHANGELOG.md` | any user-visible change — it is what a release note is assembled from |
-| `docs/PACKAGING-PLAN.md` | as packaging work lands; **delete it when it is all done** |
-
-`docs/PACKAGING-PLAN.md` is the opposite: a **live** plan for shipping ant-bot as an npm package,
-agreed but not started. Edit it as that work lands, and delete it when it is done.
 
 `docs/ant-bot-implementation-plan.md` and `docs/grok-bot-system-outline.md` are historical: the plan
 is what was commissioned, the outline is the Grok Bot design doctrine it was translated from. Code
