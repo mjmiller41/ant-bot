@@ -35,8 +35,8 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 36 test files / 670 tests passing**
-(contract 22, daemon 469, ui 63, cli 116). The table in `README.md` matches; if you touch it,
+Baseline as of this checkout: **build clean, typecheck clean, 36 test files / 672 tests passing**
+(contract 22, daemon 471, ui 63, cli 116). The table in `README.md` matches; if you touch it,
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
@@ -133,8 +133,12 @@ must go through it — without it the `browser_click`, `browser_type`, `install_
 
 **Screencast input is gated on takeover, and that gate is the whole security model.**
 `BrowserService.forwardInput()` refuses with `ScreenNotTakenOverError` unless `takeOver()` is
-active for that bot — a hard refusal, never a queue, so a click sent late cannot land after
-control was returned into a page the bot has since navigated. Input does not pass the Permission
+active for that bot. The check runs **twice**: on entry, and again at dispatch — events are
+queued to keep them in order, and control can be returned while some are still pending, so a
+click sent late must not land after handback into a page the bot has since navigated.
+Input is also serialised per screen: the websocket handler dispatches each frame without awaiting
+the last, and unordered input inverts mouse down/up and shuffles typing, which presents as "some
+keys work" rather than as a bug. Input does not pass the Permission
 Gateway on purpose: the gateway governs what *bots* do, and this is the human acting as
 themselves. Do not add a path that dispatches input without that check.
 

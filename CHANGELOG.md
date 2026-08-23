@@ -4,6 +4,17 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-08-23
+
+### Fixed
+
+- **Input is now dispatched in order.** The screencast socket handles each frame without awaiting
+  the last, so events raced: a mouse down and up could invert and a burst of typing arrived
+  shuffled. Slow human typing mostly survived it, which is why this looked like "some keys work"
+  rather than like a bug. Input is serialised per screen, and the takeover check runs again at
+  dispatch so a queued event cannot land after control is handed back. Backlogged pointer moves
+  are dropped rather than queued without bound; clicks, keys and text never are.
+
 ## [0.1.4] — 2026-08-23
 
 ### Added

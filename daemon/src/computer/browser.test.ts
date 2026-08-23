@@ -311,6 +311,58 @@ describe('takeover before any launch', () => {
     await expect(service.readSelection('scout')).rejects.toThrow(ScreenNotTakenOverError);
   });
 
+  /**
+   * Ordering, tested against a stub page rather than a real one.
+   *
+   * A live browser cannot demonstrate this: Playwright serialises CDP calls per page, so the
+   * race only appeared over the websocket, where the handler dispatches each frame without
+   * awaiting the last. Injecting a page whose operations resolve out of order is the only way to
+   * prove the queue is what provides the ordering, rather than something below it.
+   */
+  it('dispatches input strictly in order even when the page resolves out of order', async () => {
+    const service = new BrowserService({ profileDir: '/tmp/order-test', bus: new EventBus(), headless: true });
+    const seen: string[] = [];
+    let n = 0;
+    // Each call takes longer to settle than the one after it, so anything unserialised inverts.
+    const slow = (label: string) => {
+      const delay = Math.max(0, 40 - n++ * 6);
+      return new Promise<void>((r) => setTimeout(() => { seen.push(label); r(); }, delay));
+    };
+    (service as unknown as { getPage: (b: string) => Promise<unknown> }).getPage = async () => ({
+      viewportSize: () => ({ width: 1000, height: 1000 }),
+      keyboard: { insertText: (t: string) => slow(t), down: (k: string) => slow(`v${k}`), up: (k: string) => slow(`^${k}`) },
+      mouse: { move: () => slow('m'), down: () => slow('d'), up: () => slow('u'), wheel: () => slow('w') },
+    });
+
+    await service.takeOver('scout');
+    await Promise.all([...'abcdef'].map((ch) => service.forwardInput('scout', { kind: 'text', text: ch })));
+    expect(seen.join('')).toBe('abcdef');
+  });
+
+  it('drops backlogged pointer moves but never a click, key or text', async () => {
+    const service = new BrowserService({ profileDir: '/tmp/backlog-test', bus: new EventBus(), headless: true });
+    const seen: string[] = [];
+    (service as unknown as { getPage: (b: string) => Promise<unknown> }).getPage = async () => ({
+      viewportSize: () => ({ width: 1000, height: 1000 }),
+      keyboard: { insertText: (t: string) => { seen.push(t); }, down: () => {}, up: () => {} },
+      mouse: {
+        move: () => new Promise<void>((r) => { seen.push('m'); setTimeout(r, 5); }),
+        down: () => { seen.push('d'); }, up: () => { seen.push('u'); }, wheel: () => {},
+      },
+    });
+
+    await service.takeOver('scout');
+    const move = { kind: 'mouse', action: 'move', x: 0.5, y: 0.5, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0 } as const;
+    const flood = Array.from({ length: 200 }, () => service.forwardInput('scout', { ...move }));
+    const click = service.forwardInput('scout', { ...move, action: 'down' });
+    const typed = service.forwardInput('scout', { kind: 'text', text: 'kept' });
+    await Promise.all([...flood, click, typed]);
+
+    expect(seen.filter((x) => x === 'm').length).toBeLessThan(200);
+    expect(seen).toContain('d');
+    expect(seen).toContain('kept');
+  });
+
   it('gates per bot — taking over one screen does not unlock another', async () => {
     const service = new BrowserService({ profileDir: '/tmp/input-gate-test-3', bus: new EventBus(), headless: true });
     await service.takeOver('scout');
@@ -435,6 +487,26 @@ describe.skipIf(!hasChromium)('BrowserService input forwarding (live Chromium)',
         await service.forwardInput('scout', {
           kind: 'mouse', action: 'up', x: 0.25, y: 0.02, button: 'left', clickCount: 1, deltaX: 0, deltaY: 0,
         });
+        await service.forwardInput('scout', { kind: 'text', text: 'hello human' });
+
+        // Ordering. The websocket handler dispatches each frame without awaiting the last, so
+        // these are fired concurrently on purpose — exactly as the socket does. Before input was
+        // serialised per screen, this shuffled and produced something other than 'ordered'.
+        await service.forwardInput('scout', { kind: 'key', action: 'down', key: 'Control' });
+        await service.forwardInput('scout', { kind: 'key', action: 'down', key: 'a' });
+        await service.forwardInput('scout', { kind: 'key', action: 'up', key: 'a' });
+        await service.forwardInput('scout', { kind: 'key', action: 'up', key: 'Control' });
+        await Promise.all(
+          [...'ordered'].map((ch) => service.forwardInput('scout', { kind: 'text', text: ch })),
+        );
+        const live0 = await service.getPage('scout');
+        expect(await live0.$eval('#field', (el) => (el as HTMLInputElement).value)).toBe('ordered');
+
+        // Restore the text the rest of this test asserts on.
+        await service.forwardInput('scout', { kind: 'key', action: 'down', key: 'Control' });
+        await service.forwardInput('scout', { kind: 'key', action: 'down', key: 'a' });
+        await service.forwardInput('scout', { kind: 'key', action: 'up', key: 'a' });
+        await service.forwardInput('scout', { kind: 'key', action: 'up', key: 'Control' });
         await service.forwardInput('scout', { kind: 'text', text: 'hello human' });
 
         // Copy-out: select the field's text in the page and read the selection back. This is the

@@ -199,6 +199,9 @@ type FrameListener = (jpegBase64: string, w: number, h: number) => void;
 /** A selection can be a whole document; this socket is otherwise carrying video. */
 const MAX_SELECTION_CHARS = 100_000;
 
+/** Queued input events per screen before pointer moves start being dropped. */
+const MAX_QUEUED_INPUT = 32;
+
 /**
  * One Playwright persistent browser context shared by every Bot ("the computer"), with a
  * dedicated Page ("screen") per botId. Because all pages share one persistent context, cookies
@@ -228,6 +231,9 @@ export class BrowserService {
    * likely to be rescuing (a login form sitting still, waiting for input).
    */
   private readonly lastFrameSize = new Map<string, FrameSize>();
+  /** Per-bot serialisation chain for human input — see forwardInput. */
+  private readonly inputQueue = new Map<string, Promise<void>>();
+  private readonly inputDepth = new Map<string, number>();
 
   constructor(private readonly deps: BrowserServiceDeps) {
     this.headlessMode = deps.headless ?? true;
@@ -614,6 +620,8 @@ export class BrowserService {
 
   returnControl(botId: string): void {
     this.takenOver.delete(botId);
+    this.inputQueue.delete(botId);
+    this.inputDepth.delete(botId);
   }
 
   /**
@@ -689,11 +697,12 @@ export class BrowserService {
   /**
    * Dispatches human input into a taken-over page.
    *
-   * The takeover check is the whole security model here, and it is deliberately a hard refusal
-   * rather than a queue: input is only ever legitimate while the bot is blocked, and silently
-   * buffering it would let a stale click land after control was returned — into a page the bot
-   * has since navigated. Input does not pass the Permission Gateway, because the gateway governs
-   * what *bots* do; this is the human acting as themselves on their own computer.
+   * The takeover check is the whole security model here. It is applied twice on purpose: on entry,
+   * so a caller is refused immediately, and again at dispatch, because events *are* queued for
+   * ordering and control can be returned while some are still pending. Without the second check a
+   * stale click would land after handback, into a page the bot has since navigated. Input does not
+   * pass the Permission Gateway, because the gateway governs what *bots* do; this is the human
+   * acting as themselves on their own computer.
    *
    * Dispatch goes through Playwright's `page.mouse` / `page.keyboard` rather than raw CDP so the
    * key-code mapping is the SDK's problem, matching how `click()` and `type()` above work.
@@ -704,6 +713,38 @@ export class BrowserService {
         'Input was sent for a screen that is not taken over. Take over the screen first.',
       );
     }
+
+    // Input is strictly ordered per screen. The websocket handler dispatches each frame without
+    // awaiting the last, so without this chain a mouse-down and mouse-up race each other and a
+    // burst of typing arrives shuffled — which reads as "some keys work" rather than as a bug.
+    const depth = (this.inputDepth.get(botId) ?? 0) + 1;
+    this.inputDepth.set(botId, depth);
+
+    // A pointer streams moves faster than they can be dispatched. Dropping stale moves under
+    // backlog keeps the queue from growing without bound; the next move supersedes them anyway.
+    // Never dropped: clicks, keys and text, where every event is meaningful.
+    if (ev.kind === 'mouse' && ev.action === 'move' && depth > MAX_QUEUED_INPUT) {
+      this.inputDepth.set(botId, depth - 1);
+      return;
+    }
+
+    const run = async (): Promise<void> => {
+      try {
+        // Re-checked here, not just on entry: control can be returned while events are queued,
+        // and a click that lands afterwards would hit a page the bot has already moved on.
+        if (this.takenOver.has(botId)) await this.dispatchInput(botId, ev);
+      } finally {
+        this.inputDepth.set(botId, Math.max(0, (this.inputDepth.get(botId) ?? 1) - 1));
+      }
+    };
+
+    const chained = (this.inputQueue.get(botId) ?? Promise.resolve()).then(run, run);
+    // Stored swallowing rejections so one failed event cannot poison every later one.
+    this.inputQueue.set(botId, chained.catch(() => {}));
+    return chained;
+  }
+
+  private async dispatchInput(botId: string, ev: ScreencastInput): Promise<void> {
     const page = await this.getPage(botId);
 
     if (ev.kind === 'text') {
