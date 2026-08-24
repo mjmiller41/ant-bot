@@ -47,6 +47,19 @@ export class BuiltinService {
     return this.auth?.isAuthorized(name) ?? false;
   }
 
+  /**
+   * Scopes this connector asks for that the stored sign-in does not carry. Empty when the token
+   * covers everything — including when the provider granted a broader scope that subsumes one
+   * asked for, which is why the comparison is by exact string and errs toward "sign in again".
+   */
+  async missingScopes(name: string): Promise<string[]> {
+    const def = this.get(name);
+    if (!def || !this.auth) return [];
+    const granted = await this.auth.grantedScopes(name);
+    if (granted === null) return [];
+    return def.scopes.filter((s) => !granted.includes(s));
+  }
+
   /** Constant-time compare so the bearer cannot be guessed a byte at a time. */
   checkBearer(header: string | undefined): boolean {
     const given = (header ?? '').replace(/^Bearer\s+/i, '');

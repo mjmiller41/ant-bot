@@ -92,6 +92,26 @@ export class ConnectorAuthService {
     await this.secrets.set(tokenSecretName(connectorName), JSON.stringify(tokens));
   }
 
+  /**
+   * The scopes a stored sign-in actually carries, or null when there is no sign-in.
+   *
+   * A token grants what was consented to when it was minted, not what the client is configured
+   * to be allowed to ask for. Widening the requested list does nothing until the human signs in
+   * again — and without checking, that shows up as a tool that keeps returning "insufficient
+   * permission" with everything looking correctly connected.
+   */
+  async grantedScopes(connectorName: string): Promise<string[] | null> {
+    const key = tokenSecretName(connectorName);
+    const raw = (await this.secrets.resolve([key])).get(key);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as { scope?: string };
+      return typeof parsed.scope === 'string' ? parsed.scope.split(/\s+/).filter(Boolean) : [];
+    } catch {
+      return null;
+    }
+  }
+
   async signOut(connectorName: string): Promise<void> {
     await this.secrets.remove(tokenSecretName(connectorName));
   }

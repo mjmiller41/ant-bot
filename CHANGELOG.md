@@ -4,6 +4,25 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-08-24
+
+### Changed
+
+- **The built-in Gmail connector asks for the whole mailbox.** It requested `gmail.modify`; it now
+  requests `https://mail.google.com/` plus `gmail.settings.basic` and `gmail.settings.sharing` —
+  read, compose, send, permanent deletion, filters, forwarding and vacation settings. What keeps a
+  Bot in check is not the size of the token: `send_message` and `create_draft` carry seeded
+  `require` rules, so a human is asked every time regardless. Existing sign-ins keep the narrower
+  token until you sign in again.
+
+### Fixed
+
+- **A sign-in older than the scopes now asked for says so.** Widening what a connector requests
+  does nothing until the human re-consents, and until then everything reads as healthy while any
+  call needing the new permission is refused. `check` now compares the stored token's scopes
+  against what the connector asks for and reports `needs sign-in — signed in, but without N newer
+  permission(s)`.
+
 ## [0.4.4] — 2026-08-24
 
 ### Changed

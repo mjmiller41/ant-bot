@@ -893,8 +893,16 @@ Google connector:
 > ant-bot** gets past it. Google also caps unverified apps at 100 test users, which is not a
 > concern for a personal install.
 
-`send_message` and `create_draft` ship with a `require` rule, so a Bot always asks before mail
-leaves your account. Reading and searching pass the gateway like any other tool: the first call
+The sign-in grants ant-bot the whole mailbox — read, compose, send, permanent deletion — plus
+Gmail's settings (filters, forwarding, vacation). `send_message` and `create_draft` ship with a
+`require` rule, so a Bot always asks before mail leaves your account; that rule, not the size of
+the token, is what constrains a Bot.
+
+**Scopes are fixed by ant-bot, not by your Google project.** The list above is what the built-in
+requests; enabling more scopes on the client in Google's console only changes what it is permitted
+to ask for. And a token carries what was consented to when it was minted, so if ant-bot starts
+asking for more, `antbot mcp check gmail` reports `signed in, but without N newer permission(s)`
+until you run `antbot mcp logout gmail && antbot mcp login gmail`. Reading and searching pass the gateway like any other tool: the first call
 asks, and an allow rule for `mcp__gmail__search_threads` settles it.
 
 ### Giving a Bot access

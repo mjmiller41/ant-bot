@@ -19,6 +19,8 @@ export interface CheckSignals {
   discovery?: DiscoveryResult | null;
   /** For built-ins: whether the daemon holds a sign-in already. */
   builtinSignedIn?: boolean;
+  /** Scopes the connector asks for that the stored sign-in does not carry. */
+  builtinMissingScopes?: string[];
   builtinProvider?: { name: string; dynamicRegistration: boolean };
   /** Missing `{{secret:…}}` references, if any. */
   missingSecrets: string[];
@@ -27,6 +29,17 @@ export interface CheckSignals {
 /** Pure: signals in, verdict out. */
 export function decideCheck(signals: CheckSignals): ConnectorCheck {
   if (signals.builtinProvider) {
+    // Signed in, but with a token minted before the connector asked for these. It will keep
+    // failing on whatever needs them, while every other signal says healthy.
+    if (signals.builtinSignedIn && signals.builtinMissingScopes?.length) {
+      return {
+        status: 'needs-sign-in',
+        selfRegistration: signals.builtinProvider.dynamicRegistration,
+        provider: signals.builtinProvider.name,
+        tools: signals.probe?.tools ?? [],
+        detail: `signed in, but without ${signals.builtinMissingScopes.length} newer permission(s) — sign in again to grant them`,
+      };
+    }
     return signals.builtinSignedIn
       ? { status: 'ready', tools: signals.probe?.tools ?? [], provider: signals.builtinProvider.name }
       : {

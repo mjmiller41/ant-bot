@@ -51,8 +51,18 @@ export const BUILTIN_CATALOG: Record<string, BuiltinConnector> = {
     displayName: 'Gmail',
     description: 'Read, search and draft email in the signed-in Gmail account.',
     provider: GOOGLE,
-    // modify covers read + draft + send; asking for less means a second consent screen later.
-    scopes: ['https://www.googleapis.com/auth/gmail.modify'],
+    // The full mailbox, plus settings. `mail.google.com` subsumes read/compose/send/modify and
+    // adds permanent deletion; the two settings scopes are separate and cover filters, forwarding
+    // and vacation. Listing narrower scopes as well would only lengthen the consent screen.
+    //
+    // Breadth here is not what keeps a bot in check — `mcp__gmail__send_message` and
+    // `mcp__gmail__create_draft` carry seeded `require` rules, so a human is asked every time
+    // whatever the token allows.
+    scopes: [
+      'https://mail.google.com/',
+      'https://www.googleapis.com/auth/gmail.settings.basic',
+      'https://www.googleapis.com/auth/gmail.settings.sharing',
+    ],
     tools: gmailTools,
   },
 };

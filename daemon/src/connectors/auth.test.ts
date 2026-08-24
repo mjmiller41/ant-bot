@@ -125,3 +125,24 @@ describe('forgetClient', () => {
     expect(map.has('antbot:oauth:gmail')).toBe(true);
   });
 });
+
+describe('grantedScopes', () => {
+  // A token grants what was consented to when it was minted. Widening what the connector asks
+  // for changes nothing until the human signs in again, and the difference is invisible without
+  // reading this back.
+  it('reports what a stored sign-in actually carries, not what was asked for', async () => {
+    const { store } = fakeStore({
+      'antbot:oauth:gmail': JSON.stringify({ accessToken: 'a', scope: 'https://mail.google.com/ x/y' }),
+    });
+    const auth = new ConnectorAuthService(store, () => 4780);
+    expect(await auth.grantedScopes('gmail')).toEqual(['https://mail.google.com/', 'x/y']);
+  });
+
+  it('is null with no sign-in, and empty when the provider named no scopes', async () => {
+    const { store } = fakeStore();
+    const auth = new ConnectorAuthService(store, () => 4780);
+    expect(await auth.grantedScopes('gmail')).toBeNull();
+    await store.set('antbot:oauth:gmail', JSON.stringify({ accessToken: 'a' }));
+    expect(await auth.grantedScopes('gmail')).toEqual([]);
+  });
+});

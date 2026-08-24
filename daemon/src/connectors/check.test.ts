@@ -52,3 +52,32 @@ describe('decideCheck', () => {
     expect(decideCheck({ ...base, builtinProvider: g, builtinSignedIn: false })).toMatchObject({ status: 'needs-sign-in', selfRegistration: false, provider: 'Google' });
   });
 });
+
+describe('decideCheck — a sign-in older than the scopes now asked for', () => {
+  const builtin = {
+    probe: null,
+    challenge: 'none' as const,
+    missingSecrets: [],
+    builtinProvider: { name: 'Google', dynamicRegistration: false },
+  };
+
+  // The trap: broadening the requested scopes changes nothing until the human signs in again,
+  // and until then the connector looks perfectly healthy while every call needing the new
+  // permission is refused.
+  it('asks for a new sign-in when the stored token lacks a requested scope', () => {
+    const v = decideCheck({ ...builtin, builtinSignedIn: true, builtinMissingScopes: ['https://mail.google.com/'] });
+    expect(v.status).toBe('needs-sign-in');
+    expect(v.detail).toMatch(/1 newer permission/);
+  });
+
+  it('stays ready when the token carries everything asked for', () => {
+    expect(decideCheck({ ...builtin, builtinSignedIn: true, builtinMissingScopes: [] }).status).toBe('ready');
+    expect(decideCheck({ ...builtin, builtinSignedIn: true }).status).toBe('ready');
+  });
+
+  it('still reports a plain needs-sign-in when there is no token at all', () => {
+    const v = decideCheck({ ...builtin, builtinSignedIn: false, builtinMissingScopes: [] });
+    expect(v.status).toBe('needs-sign-in');
+    expect(v.detail).toBeUndefined();
+  });
+});

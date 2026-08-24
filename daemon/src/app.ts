@@ -207,6 +207,7 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
         challenge: 'none',
         missingSecrets: [],
         builtinSignedIn: app.builtin?.authorized(connector.name) ?? false,
+        builtinMissingScopes: (await app.builtin?.missingScopes(connector.name)) ?? [],
         builtinProvider: def ? { name: def.provider.displayName, dynamicRegistration: def.provider.dynamicRegistration } : undefined,
       });
     } else {
