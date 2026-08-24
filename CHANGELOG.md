@@ -4,6 +4,19 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-08-24
+
+### Fixed
+
+- **Sign-in accepts a client secret.** Google's "Web application" OAuth clients authenticate at
+  the token endpoint, so a client ID alone got as far as the consent screen and then failed with
+  the provider's own `client_secret is missing`. Both the CLI (`--client-secret`) and the
+  Connectors screen now take one, and ant-bot explains what is needed rather than passing that
+  message through unhelpfully.
+- **Client credentials are remembered.** They are registered once with a provider and outlive any
+  token, so they are stored in the keychain under their own key — a second sign-in, after an
+  expiry or a failed exchange, needs no flags.
+
 ## [0.3.0] — 2026-08-24
 
 ### Added

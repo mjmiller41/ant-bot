@@ -197,12 +197,16 @@ function ConnectorRow({ connector, onChanged }: { connector: ApiConnector; onCha
   const [testing, setTesting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
   const [needsClientId, setNeedsClientId] = useState(false);
 
   async function signIn() {
     setAuthError(null);
     try {
-      const { authorizeUrl } = await api.connectors.login(connector.id, clientId ? { clientId } : {});
+      const body: { clientId?: string; clientSecret?: string } = {};
+      if (clientId.trim()) body.clientId = clientId.trim();
+      if (clientSecret.trim()) body.clientSecret = clientSecret.trim();
+      const { authorizeUrl } = await api.connectors.login(connector.id, body);
       // A new tab, not a redirect: the person keeps ant-bot open, and the provider returns to the
       // daemon's callback which tells them to come back here.
       window.open(authorizeUrl, '_blank', 'noopener');
@@ -212,7 +216,7 @@ function ConnectorRow({ connector, onChanged }: { connector: ApiConnector; onCha
       setAuthError(message);
       // Providers without dynamic registration need a client ID from the human; show the field
       // rather than making them read the error and guess what to do.
-      if (/client ID/i.test(message)) setNeedsClientId(true);
+      if (/client ID|client secret/i.test(message)) setNeedsClientId(true);
     }
   }
 
@@ -289,16 +293,31 @@ function ConnectorRow({ connector, onChanged }: { connector: ApiConnector; onCha
 
       {authError && <p className="mt-2 text-xs text-(--color-red)">{authError}</p>}
       {needsClientId && (
-        <div className="mt-2 flex gap-1">
-          <input
-            className="flex-1 rounded border border-(--color-border) bg-(--color-bg) px-2 py-1 text-xs"
-            placeholder="client ID from the provider's console"
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-          />
-          <button type="button" onClick={signIn} disabled={!clientId.trim()} className="rounded border border-(--color-border) px-2 py-1 text-xs disabled:opacity-40">
-            Sign in
-          </button>
+        <div className="mt-2 space-y-1">
+          <div className="flex gap-1">
+            <input
+              className="flex-1 rounded border border-(--color-border) bg-(--color-bg) px-2 py-1 text-xs"
+              placeholder="client ID from the provider's console"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+            />
+            {/* type=password so a shoulder-surfer does not read it; the value goes straight to
+                the daemon's keychain and is never echoed back to this screen. */}
+            <input
+              type="password"
+              className="flex-1 rounded border border-(--color-border) bg-(--color-bg) px-2 py-1 text-xs"
+              placeholder="client secret (if the provider issued one)"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+            />
+            <button type="button" onClick={signIn} disabled={!clientId.trim()} className="rounded border border-(--color-border) px-2 py-1 text-xs disabled:opacity-40">
+              Sign in
+            </button>
+          </div>
+          <p className="text-[11px] text-(--color-text-muted)">
+            Google&rsquo;s &ldquo;Web application&rdquo; clients need both. Authorised redirect URI:{' '}
+            <code>http://127.0.0.1:4780/api/connectors/oauth/callback</code>
+          </p>
         </div>
       )}
 

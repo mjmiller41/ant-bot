@@ -909,7 +909,8 @@ Some providers — Google among them — do not let an application register itse
 ID you create in their own console. ant-bot says so when that happens and asks for one:
 
 ```bash
-antbot mcp login gmail --client-id YOUR_ID.apps.googleusercontent.com
+antbot mcp login gmail --client-id YOUR_ID.apps.googleusercontent.com \
+  --client-secret YOUR_SECRET
 ```
 
 When you create that client, add this as an **authorised redirect URI**:
@@ -917,6 +918,11 @@ When you create that client, add this as an **authorised redirect URI**:
 ```
 http://127.0.0.1:4780/api/connectors/oauth/callback
 ```
+
+Google's **Web application** client type authenticates at the token endpoint, so it needs the
+client *secret* as well as the ID — with only the ID you get as far as the sign-in page and then
+`client_secret is missing`. Both are stored in your keychain the first time, so a later sign-in
+needs no flags at all.
 
 `antbot mcp logout <name>` forgets the sign-in. Tokens live in the keychain like any other
 secret — never in the database, never in an API response, never in a Bot's context.

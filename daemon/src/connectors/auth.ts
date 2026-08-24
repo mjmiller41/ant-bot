@@ -18,6 +18,20 @@ const log = logger('connector-auth');
 /** Keychain key for one connector's tokens. Namespaced so it cannot collide with a user secret. */
 export const tokenSecretName = (connectorName: string): string => `antbot:oauth:${connectorName}`;
 
+/**
+ * Keychain key for a connector's OAuth client credentials.
+ *
+ * Kept separate from the tokens because it outlives them: a client id and secret are registered
+ * once with the provider, while tokens come and go. Storing them means a second `login` — after
+ * an expiry, a revocation, or a failed first attempt — does not ask for them again.
+ */
+export const clientSecretName = (connectorName: string): string => `antbot:oauth-client:${connectorName}`;
+
+interface ClientCredentials {
+  clientId: string;
+  clientSecret?: string;
+}
+
 /** Where the authorization server sends the human back. Must be registered with the provider. */
 export const redirectUri = (port: number): string => `http://127.0.0.1:${port}/api/connectors/oauth/callback`;
 
@@ -78,6 +92,22 @@ export class ConnectorAuthService {
     await this.secrets.remove(tokenSecretName(connectorName));
   }
 
+  /** Forget the tokens *and* the registered client. Used when the credentials themselves are wrong. */
+  async forgetClient(connectorName: string): Promise<void> {
+    await this.secrets.remove(clientSecretName(connectorName));
+  }
+
+  private async readClient(connectorName: string): Promise<ClientCredentials | null> {
+    const key = clientSecretName(connectorName);
+    const found = (await this.secrets.resolve([key])).get(key);
+    if (!found) return null;
+    try {
+      return JSON.parse(found) as ClientCredentials;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Begin a sign-in. Returns the URL the human must open.
    *
@@ -95,8 +125,11 @@ export class ConnectorAuthService {
     const discovery = await discoverAuth(connector.config.url);
     const redirect = redirectUri(this.port);
 
-    let clientId = opts.clientId;
-    let clientSecret = opts.clientSecret;
+    // Given now, else remembered from last time, else registered automatically. The remembered
+    // path is what makes a retry after a failed exchange painless.
+    const remembered = await this.readClient(connector.name);
+    let clientId = opts.clientId ?? remembered?.clientId;
+    let clientSecret = opts.clientSecret ?? (opts.clientId ? undefined : remembered?.clientSecret);
     if (!clientId && discovery.authServer.registrationEndpoint) {
       const registered = await registerClient(discovery.authServer.registrationEndpoint, redirect);
       clientId = registered?.clientId;
@@ -108,6 +141,11 @@ export class ConnectorAuthService {
           'so it needs a client ID you create yourself. Register one with that provider, add ' +
           `"${redirect}" as an authorised redirect URI, and pass the client ID with --client-id.`,
       );
+    }
+
+    // Remember before sending the human to the provider, so a failed exchange does not lose them.
+    if (opts.clientId || opts.clientSecret || !remembered) {
+      await this.secrets.set(clientSecretName(connector.name), JSON.stringify({ clientId, clientSecret }));
     }
 
     const pkce = createPkce();
@@ -146,15 +184,29 @@ export class ConnectorAuthService {
     if (!p) throw new OAuthError('This sign-in link is no longer valid. Start the sign-in again.');
     this.pending.delete(state);
 
-    const tokens = await exchangeCode({
-      tokenEndpoint: p.tokenEndpoint,
-      code,
-      verifier: p.verifier,
-      clientId: p.clientId,
-      clientSecret: p.clientSecret,
-      redirectUri: p.redirectUri,
-      resource: p.resource,
-    });
+    let tokens;
+    try {
+      tokens = await exchangeCode({
+        tokenEndpoint: p.tokenEndpoint,
+        code,
+        verifier: p.verifier,
+        clientId: p.clientId,
+        clientSecret: p.clientSecret,
+        redirectUri: p.redirectUri,
+        resource: p.resource,
+      });
+    } catch (err) {
+      const message = (err as Error).message;
+      // Google's "Web application" client type authenticates at the token endpoint, so the id
+      // alone is not enough. Its own wording does not say what to do about it.
+      if (/client_secret/i.test(message)) {
+        throw new OAuthError(
+          'This provider requires a client secret as well as a client ID. Add the secret from the ' +
+            "same OAuth client (in Google's console: the client's \"Client secret\") and sign in again.",
+        );
+      }
+      throw err;
+    }
     await this.write(p.connectorName, tokens);
     log.info(`connector "${p.connectorName}" signed in`);
     return { connectorId: p.connectorId, connectorName: p.connectorName };

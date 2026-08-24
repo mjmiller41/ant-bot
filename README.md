@@ -280,10 +280,10 @@ Current totals, as run against this checkout:
 | Package | Test files | Tests |
 |---|---|---|
 | `@antbot/contract` | 1 | 34 |
-| `@antbot/daemon` | 25 | 573 |
-| `@antbot/ui` | 9 | 90 |
+| `@antbot/daemon` | 25 | 575 |
+| `@antbot/ui` | 9 | 92 |
 | `@antbot/cli` | 8 | 140 |
-| **Total** | **43** | **837** |
+| **Total** | **43** | **841** |
 
 ## Status / not built
 

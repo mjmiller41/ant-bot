@@ -191,6 +191,36 @@ describe('ConnectorsScreen — interactive sign-in', () => {
     await waitFor(() => expect(login).toHaveBeenLastCalledWith('c1', { clientId: 'abc.apps.googleusercontent.com' }));
   });
 
+  // Google's "Web application" clients authenticate at the token endpoint, so the id alone gets
+  // as far as the callback and then fails with "client_secret is missing".
+  it('offers a secret field too, and sends it', async () => {
+    const { ApiError } = await import('../api/client.js');
+    login.mockRejectedValue(new ApiError('This provider requires a client secret as well as a client ID.', 400));
+    list.mockResolvedValue([httpRow()]);
+    render(<ConnectorsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+
+    const secret = await screen.findByPlaceholderText(/client secret/);
+    // Not readable over a shoulder, and never echoed back from the daemon.
+    expect(secret).toHaveAttribute('type', 'password');
+
+    login.mockResolvedValue({ authorizeUrl: 'https://accounts.google.com/auth' });
+    vi.stubGlobal('open', vi.fn());
+    fireEvent.change(screen.getByPlaceholderText(/client ID/), { target: { value: 'cid' } });
+    fireEvent.change(secret, { target: { value: 'shh' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Sign in' })[1]!);
+    await waitFor(() => expect(login).toHaveBeenLastCalledWith('c1', { clientId: 'cid', clientSecret: 'shh' }));
+  });
+
+  it('names the redirect URI to authorise', async () => {
+    const { ApiError } = await import('../api/client.js');
+    login.mockRejectedValue(new ApiError('needs a client ID you create yourself', 400));
+    list.mockResolvedValue([httpRow()]);
+    render(<ConnectorsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText(/api\/connectors\/oauth\/callback/)).toBeInTheDocument();
+  });
+
   // stdio servers take credentials in env; there is nothing to sign in to.
   it('offers no sign-in for a stdio connector', async () => {
     list.mockResolvedValue([row()]);

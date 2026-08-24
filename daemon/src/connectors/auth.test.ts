@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Connector } from '@antbot/contract';
-import { ConnectorAuthService, tokenSecretName, redirectUri, type TokenStore } from './auth.js';
+import { ConnectorAuthService, tokenSecretName, clientSecretName, redirectUri, type TokenStore } from './auth.js';
 
 function fakeStore(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -23,6 +23,13 @@ describe('token storage', () => {
   // human created for a {{secret:NAME}} reference.
   it('namespaces the keychain entry', () => {
     expect(tokenSecretName('gmail')).toBe('antbot:oauth:gmail');
+  });
+
+  // Separate key from the tokens: client credentials are registered once and outlive them, so a
+  // second sign-in after an expiry or a failed exchange does not ask for them again.
+  it('stores client credentials under their own key', () => {
+    expect(clientSecretName('gmail')).toBe('antbot:oauth-client:gmail');
+    expect(clientSecretName('gmail')).not.toBe(tokenSecretName('gmail'));
   });
 
   it('builds a loopback redirect on the daemon port', () => {
@@ -103,5 +110,17 @@ describe('beginLogin', () => {
     const stdio = httpConnector({ config: { transport: 'stdio', command: 'x', args: [], env: {} } });
     await expect(new ConnectorAuthService(store, 4780).beginLogin(stdio))
       .rejects.toThrow(/http and sse/);
+  });
+});
+
+describe('forgetClient', () => {
+  it('drops the registered client without touching the tokens', async () => {
+    const { store, map } = fakeStore({
+      'antbot:oauth-client:gmail': '{"clientId":"cid"}',
+      'antbot:oauth:gmail': '{"accessToken":"at"}',
+    });
+    await new ConnectorAuthService(store, 4780).forgetClient('gmail');
+    expect(map.has('antbot:oauth-client:gmail')).toBe(false);
+    expect(map.has('antbot:oauth:gmail')).toBe(true);
   });
 });
