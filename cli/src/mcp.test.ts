@@ -90,6 +90,11 @@ describe('describeVerdict', () => {
     expect(describeVerdict('x', { status: 'needs-credential', tools: [], detail: 'missing secret mcp/x/TOKEN' })).toMatch(/missing secret/);
     expect(describeVerdict('x', { status: 'unreachable', tools: [], detail: 'ECONNREFUSED' })).toMatch(/unreachable — ECONNREFUSED/);
   });
+  it('names the built-in instead of a sign-in that cannot help', () => {
+    const v = describeVerdict('gmail-mcp', { status: 'needs-sign-in', provider: 'accounts.google.com', tools, alternative: 'gmail', detail: 'Use the built-in instead: antbot mcp add gmail' });
+    expect(v).toMatch(/✗ gmail-mcp: Use the built-in instead: antbot mcp add gmail/);
+  });
+
   it('singularises one tool', () => {
     expect(describeVerdict('x', { status: 'ready', tools: [tools[0]!] })).toMatch(/1 tool$/);
   });

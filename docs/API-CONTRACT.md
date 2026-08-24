@@ -66,7 +66,7 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 | POST | `/api/connectors/:id/login` | `{clientId?, clientSecret?, scopes?}` | `{ authorizeUrl }` |
 | DELETE | `/api/connectors/:id/login` | – | `{ ok: true }` (forget a stored sign-in) |
 | GET | `/api/connectors/oauth/callback` | – | HTML — where the provider returns the human |
-| POST | `/api/connectors/:id/check` | – | `ConnectorCheck` `{status: ready \| needs-sign-in \| needs-credential \| unreachable, selfRegistration?, provider?, tools[], detail?}`; persisted to the row |
+| POST | `/api/connectors/:id/check` | – | `ConnectorCheck` `{status: ready \| needs-sign-in \| needs-credential \| unreachable, selfRegistration?, provider?, tools[], detail?, alternative?}` (`alternative` names a built-in when the URL is a provider's own allowlisted endpoint); persisted to the row |
 | POST | `/mcp/:name` | JSON-RPC (MCP streamable HTTP) | A built-in connector's MCP endpoint. 401 without the per-boot bearer; 202 for a notification |
 | DELETE | `/mcp/:name` | – | 204 (session end; stateless, so a no-op) |
 | GET | `/api/bots/:id/connectors` | – | `Connector[]` assigned to this bot |

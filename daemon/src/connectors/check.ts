@@ -6,6 +6,7 @@
 // tool list is attached only once the server has been reached. Pure decision at the top, thin
 // I/O below, so every verdict is testable without a network.
 import type { Connector, ConnectorCheck } from '@antbot/contract';
+import { builtinAlternativeFor } from './builtin/catalog.js';
 import { discoverAuth, OAuthError, type DiscoveryResult } from './oauth.js';
 import { probeConnector, type ProbeResult } from '../bots/mcpProbe.js';
 import type { MountedConnector } from '../agent/runtime.js';
@@ -40,11 +41,22 @@ export function decideCheck(signals: CheckSignals): ConnectorCheck {
   }
   if (signals.challenge === 'auth') {
     const as = signals.discovery?.authServer;
+    const host = as ? new URL(as.authorizationEndpoint).host : undefined;
+    // Google's own MCP endpoint admits only clients Google allowlisted: the sign-in succeeds and
+    // every call is then refused with "The caller does not have permission". Saying so here is
+    // the difference between a dead end and the one command that works.
+    const alternative = host ? builtinAlternativeFor(host) : undefined;
     return {
       status: 'needs-sign-in',
       selfRegistration: Boolean(as?.registrationEndpoint),
-      provider: as ? new URL(as.authorizationEndpoint).host : undefined,
+      provider: host,
       tools: signals.probe?.tools ?? [],
+      ...(alternative
+        ? {
+            alternative,
+            detail: `${host} does not accept third-party MCP clients here, so a sign-in would not help. Use the built-in instead: antbot mcp add ${alternative}`,
+          }
+        : {}),
     };
   }
   if (signals.challenge === 'unreachable' || (signals.probe && !signals.probe.ok)) {

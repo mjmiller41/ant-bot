@@ -58,3 +58,15 @@ export const BUILTIN_CATALOG: Record<string, BuiltinConnector> = {
 };
 
 export const isBuiltinName = (name: string): boolean => name in BUILTIN_CATALOG;
+
+/**
+ * The built-in to use instead, when a custom connector signs in at a provider whose own MCP
+ * endpoint refuses third-party clients. Matched on the authorization host: a Google sign-in is
+ * a Google sign-in whatever URL sits behind it.
+ */
+export function builtinAlternativeFor(authorizationHost: string): string | undefined {
+  for (const [name, def] of Object.entries(BUILTIN_CATALOG)) {
+    if (new URL(def.provider.authorizationEndpoint).host === authorizationHost && !def.provider.dynamicRegistration) return name;
+  }
+  return undefined;
+}

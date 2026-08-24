@@ -15,6 +15,7 @@ interface Check {
   provider?: string;
   tools: { name: string; description: string }[];
   detail?: string;
+  alternative?: string;
 }
 interface ConnectorRow {
   id: string;
@@ -94,6 +95,7 @@ export function describeVerdict(name: string, check: Check): string {
     case 'ready':
       return green(`✓ ${name}: ready, ${n} tool${n === 1 ? '' : 's'}`);
     case 'needs-sign-in':
+      if (check.alternative) return red(`✗ ${name}: ${check.detail ?? `use the built-in instead: antbot mcp add ${check.alternative}`}`);
       return yellow(`! ${name}: needs sign-in${check.provider ? ` (${check.provider})` : ''}${n ? `, ${n} tools` : ''}`);
     case 'needs-credential':
       return yellow(`! ${name}: ${check.detail ?? 'needs a credential'}`);
@@ -296,7 +298,7 @@ export async function runMcpCommand(argv: string[], port: number): Promise<numbe
       console.log(describeVerdict(name, created.check));
 
       // Sign in right away when the verdict says so — that is the whole point of one step.
-      if (created.check.status === 'needs-sign-in') {
+      if (created.check.status === 'needs-sign-in' && !created.check.alternative) {
         let creds: { clientId?: string; clientSecret?: string } = {};
         if (!created.check.selfRegistration) {
           const c = await collectClientCredentials(entry, created.check.provider);
@@ -325,7 +327,7 @@ export async function runMcpCommand(argv: string[], port: number): Promise<numbe
       const check = await postJson<Check>(port, `/api/connectors/${row.id}/check`, {});
       console.log(describeVerdict(name, check));
       for (const t of check.tools) console.log(`  ${bold(`mcp__${name}__${t.name}`)}${t.description ? dim(`  ${t.description.slice(0, 90)}`) : ''}`);
-      if (check.status === 'needs-sign-in') console.log(dim(`  Sign in with: antbot mcp login ${name}`));
+      if (check.status === 'needs-sign-in' && !check.alternative) console.log(dim(`  Sign in with: antbot mcp login ${name}`));
       return check.status === 'ready' ? 0 : 1;
     }
 

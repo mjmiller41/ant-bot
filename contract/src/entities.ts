@@ -236,6 +236,12 @@ export const ConnectorCheckSchema = z.object({
   provider: z.string().optional(),
   tools: z.array(z.object({ name: z.string(), description: z.string() })).default([]),
   detail: z.string().optional(),
+  /**
+   * A built-in that does the same job, when the URL is a provider's own MCP endpoint that admits
+   * only clients the provider allowlisted (Google). Sign-in there can succeed and every call
+   * still be refused, so the honest verdict names the way that works.
+   */
+  alternative: z.string().optional(),
 });
 export type ConnectorCheck = z.infer<typeof ConnectorCheckSchema>;
 

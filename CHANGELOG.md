@@ -4,6 +4,17 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-08-24
+
+### Fixed
+
+- **A Google MCP URL now says what works.** Adding `https://gmailmcp.googleapis.com/…` used to
+  report `needs sign-in`, take a client ID, complete the sign-in, and then have every call refused
+  with "The caller does not have permission" — Google's endpoint admits only clients Google has
+  allowlisted. The check now recognises a Google sign-in behind a custom URL and answers
+  "use the built-in instead: `antbot mcp add gmail`", in the CLI and on the Connectors screen,
+  without prompting for a client that could not help.
+
 ## [0.4.0] — 2026-08-24
 
 Connectors, redesigned. Getting an MCP server usable by a Bot took up to eleven steps and eight

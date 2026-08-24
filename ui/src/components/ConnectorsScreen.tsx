@@ -56,6 +56,7 @@ export function verdictText(check: ConnectorCheck): { text: string; tone: 'ok' |
     case 'ready':
       return { text: `ready — ${n} tool${n === 1 ? '' : 's'}`, tone: 'ok' };
     case 'needs-sign-in':
+      if (check.alternative) return { text: check.detail ?? `use the built-in instead: ${check.alternative}`, tone: 'bad' };
       return { text: `needs sign-in${check.provider ? ` (${check.provider})` : ''}`, tone: 'warn' };
     case 'needs-credential':
       return { text: check.detail ?? 'needs a credential', tone: 'warn' };
@@ -313,7 +314,7 @@ function ConnectorRow({
   useEffect(() => {
     if (!initialCheck) return;
     setCheck(initialCheck);
-    if (initialCheck.status === 'needs-sign-in' && initialCheck.selfRegistration === false) setNeedsClient(true);
+    if (initialCheck.status === 'needs-sign-in' && initialCheck.selfRegistration === false && !initialCheck.alternative) setNeedsClient(true);
   }, [initialCheck]);
 
   async function signIn(creds: { clientId?: string; clientSecret?: string } = {}) {
@@ -336,7 +337,7 @@ function ConnectorRow({
     try {
       const c = await api.connectors.check(connector.id);
       setCheck(c);
-      if (c.status === 'needs-sign-in' && c.selfRegistration === false) setNeedsClient(true);
+      if (c.status === 'needs-sign-in' && c.selfRegistration === false && !c.alternative) setNeedsClient(true);
       onChanged();
     } catch (err) {
       setCheck({ status: 'unreachable', tools: [], detail: err instanceof ApiError ? err.message : 'Check failed' });

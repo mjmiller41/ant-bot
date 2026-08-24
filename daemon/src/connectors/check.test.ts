@@ -9,6 +9,14 @@ const as = (registrationEndpoint?: string) => ({
 });
 
 describe('decideCheck', () => {
+  // The user's actual dead end: Google's MCP endpoint, a working sign-in, and every call refused.
+  it('points a Google MCP URL at the built-in instead of a sign-in that cannot help', () => {
+    const v = decideCheck({ ...base, challenge: 'auth', discovery: as() });
+    expect(v.status).toBe('needs-sign-in');
+    expect(v.alternative).toBe('gmail');
+    expect(v.detail).toMatch(/antbot mcp add gmail/);
+  });
+
   it('is ready when reachable and unchallenged', () => {
     expect(decideCheck(base)).toEqual({ status: 'ready', tools });
   });
