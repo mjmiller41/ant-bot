@@ -4,6 +4,21 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] — 2026-08-24
+
+### Fixed
+
+- **"Start fresh" looked like it did nothing.** It cleared the conversation in the database, but
+  the open thread kept rendering the copy it already had, so the screen did not change. The
+  `thread.updated` event the daemon publishes was a no-op in the web client — it now drops the
+  cached transcript and the view refetches.
+
+### Added
+
+- Guidance for connectors that need an interactive sign-in rather than a static token: the
+  `claude` CLI can complete an OAuth flow for an MCP server (`claude mcp login`), which is the
+  only route for endpoints that will not accept a header credential. See USER-GUIDE §11.
+
 ## [0.2.2] — 2026-08-24
 
 ### Fixed

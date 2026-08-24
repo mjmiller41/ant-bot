@@ -45,6 +45,8 @@ export interface StoreState {
   setThreads: (threads: Thread[]) => void;
   upsertThread: (thread: Thread) => void;
   setThreadMessages: (threadId: string, messages: Message[]) => void;
+  /** Bumped when a thread's transcript changes wholesale (today: "Start fresh"). */
+  threadEpoch: number;
   /** Optimistically appends/replaces a message outside the seq-ordered event stream
    *  (e.g. the REST response for a message the user just sent). */
   appendLocalMessage: (threadId: string, message: Message) => void;
@@ -86,6 +88,8 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   upsertThread: (thread) => set((s) => ({ threads: { ...s.threads, [thread.id]: thread } })),
+
+  threadEpoch: 0,
 
   setThreadMessages: (threadId, messages) =>
     set((s) => ({ messagesByThread: { ...s.messagesByThread, [threadId]: messages } })),
@@ -258,7 +262,17 @@ export const useStore = create<StoreState>((set, get) => ({
         break;
       }
       case 'thread.updated': {
-        // No local cache invalidation needed beyond re-fetch triggers handled by callers.
+        // Drop the cached transcript so the open view refetches. The daemon publishes this when a
+        // thread's messages changed out from under the client — today that means "Start fresh",
+        // which clears them. Treating it as a no-op is what made that action look like it did
+        // nothing: the rows were gone and the screen kept showing them.
+        set((s) => {
+          const next = { ...s.messagesByThread };
+          delete next[event.threadId2];
+          // The epoch is what an open view watches: dropping the cache alone would leave a
+          // component that already read it holding stale rows until something else re-rendered.
+          return { messagesByThread: next, threadEpoch: s.threadEpoch + 1 };
+        });
         break;
       }
       default: {

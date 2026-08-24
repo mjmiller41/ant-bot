@@ -156,13 +156,17 @@ export default function App() {
     return () => controller.close();
   }, [setBots, setThreads, setPendingApprovals]);
 
+  // Refetch on thread change, and again whenever the daemon says a transcript changed wholesale
+  // — `thread.updated` bumps threadEpoch. Without that second trigger "Start fresh" cleared the
+  // rows and the open view kept showing them, which read as the button doing nothing.
+  const threadEpoch = useStore((s) => s.threadEpoch);
   useEffect(() => {
     if (!activeThreadId) return;
     api.threads.get(activeThreadId).then(({ messages }) => {
       setThreadMessages(activeThreadId, messages);
     });
     api.threads.markRead(activeThreadId).catch(() => {});
-  }, [activeThreadId, setThreadMessages]);
+  }, [activeThreadId, threadEpoch, setThreadMessages]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

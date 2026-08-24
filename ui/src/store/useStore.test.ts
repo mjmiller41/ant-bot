@@ -353,3 +353,26 @@ describe('useStore', () => {
     expect(useStore.getState().lastSeq).toBe(11);
   });
 });
+
+describe('thread.updated', () => {
+  // The bug: this event was a no-op, so "Start fresh" cleared the rows in the database and the
+  // open thread kept rendering the copy it already had — indistinguishable from a dead button.
+  it('drops the cached transcript and bumps the epoch', () => {
+    const s = useStore.getState();
+    s.setThreadMessages('t1', [{ id: 'm1', threadId: 't1', authorKind: 'user', contentMd: 'hi' } as never]);
+    s.setThreadMessages('t2', [{ id: 'm2', threadId: 't2', authorKind: 'user', contentMd: 'other' } as never]);
+    const before = useStore.getState().threadEpoch;
+    // Past lastSeq: handleServerEvent drops anything at or below it as stale.
+    const seq = useStore.getState().lastSeq + 1;
+
+    useStore.getState().handleServerEvent({
+      type: 'thread.updated', seq, threadId: 't1', botId: 'b1', threadId2: 't1',
+    } as never);
+
+    const after = useStore.getState();
+    expect(after.messagesByThread.t1).toBeUndefined();
+    expect(after.threadEpoch).toBe(before + 1);
+    // Only the thread named in the event.
+    expect(after.messagesByThread.t2).toHaveLength(1);
+  });
+});

@@ -887,10 +887,25 @@ antbot connector add gmail-mcp --url https://example.com/mcp \
   --header "Authorization=Bearer {{secret:MY_TOKEN}}"
 ```
 
-Note the limitation: ant-bot sends **static** credentials. A server that requires an interactive
-OAuth sign-in — most first-party Google and Microsoft endpoints — cannot be used this way, because
-there is nowhere to complete the sign-in and the resulting token expires anyway. Prefer a server
-that accepts a long-lived token or API key.
+Note the limitation: ant-bot itself only sends **static** credentials. A server that requires an
+interactive OAuth sign-in — most first-party Google and Microsoft endpoints — has nowhere to
+complete that sign-in from a Bot's turn.
+
+There is one route worth trying for those. ant-bot runs turns through the `claude` CLI, and that
+CLI can complete an OAuth flow for an MCP server and store the result:
+
+```bash
+claude mcp add --transport http gmail-mcp https://gmailmcp.googleapis.com/mcp/v1
+claude mcp login gmail-mcp      # opens a browser; complete the sign-in there
+```
+
+Use the **same name** as the ant-bot connector, so the stored credential and the server ant-bot
+mounts refer to the same thing. Then run a turn: if the Bot's next message no longer reports
+`needs authentication`, it worked. This is not a supported ant-bot feature — it is the underlying
+CLI's own credential store, and whether it applies to a server ant-bot mounts is worth confirming
+before relying on it. `claude mcp logout <name>` clears it again.
+
+Otherwise, prefer a server that accepts a long-lived token or API key in a header.
 
 Other statuses you may see: `failed to start` (wrong command or URL — `connector test` will show
 the same), and `did not finish connecting in time`.
