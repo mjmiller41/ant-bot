@@ -4,6 +4,18 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-08-24
+
+### Fixed
+
+- **`antbot update` could never see a new version.** The registry request asked for
+  `application/vnd.npm.install-v1+json`, which npm serves only for the full packument — on the
+  `/latest` endpoint it answers `406`, which the caller reported as "could not reach the npm
+  registry". So the update check has failed since the first release, and the once-a-day notice in
+  `status` and `doctor` never fired. The header is gone, and `fetchLatestVersion` now has tests of
+  its own; every previous test injected a fake fetch, which is exactly how the one function that
+  talks to the network went unexercised.
+
 ## [0.2.1] — 2026-08-24
 
 ### Added

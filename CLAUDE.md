@@ -35,8 +35,8 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 41 test files / 789 tests passing**
-(contract 34, daemon 537, ui 85, cli 133). The table in `README.md` matches; if you touch it,
+Baseline as of this checkout: **build clean, typecheck clean, 41 test files / 795 tests passing**
+(contract 34, daemon 537, ui 85, cli 139). The table in `README.md` matches; if you touch it,
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer

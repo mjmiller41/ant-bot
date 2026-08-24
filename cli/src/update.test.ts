@@ -11,6 +11,8 @@ import {
   REGISTRY_URL,
   checkForUpdate,
   UPDATE_CHECK_TTL_MS,
+  REGISTRY_URL,
+  fetchLatestVersion,
   type UpdateCache,
 } from './update.js';
 
@@ -242,5 +244,66 @@ describe('checkForUpdate', () => {
     const r = await checkForUpdate(deps({ fetchLatest: async () => null, writeCache: () => { wrote = true; } }));
     expect(wrote).toBe(false);
     expect(r.latest).toBeNull();
+  });
+});
+
+describe('fetchLatestVersion', () => {
+  const withFetch = async (impl: typeof fetch, run: () => Promise<unknown>) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = impl;
+    try { return await run(); } finally { globalThis.fetch = original; }
+  };
+
+  // The bug this exists for: the request carried `accept: application/vnd.npm.install-v1+json`,
+  // which the registry only serves for the full packument. On /latest it answers 406, and the
+  // caller reported that as "could not reach the npm registry" — so `antbot update` never worked.
+  it('does not ask for abbreviated metadata, which /latest does not serve', async () => {
+    let sentHeaders: HeadersInit | undefined;
+    await withFetch(
+      (async (_u: string, init?: RequestInit) => {
+        sentHeaders = init?.headers;
+        return new Response(JSON.stringify({ version: '9.9.9' }), { status: 200 });
+      }) as unknown as typeof fetch,
+      () => fetchLatestVersion(),
+    );
+    const accept = JSON.stringify(sentHeaders ?? {});
+    expect(accept).not.toContain('vnd.npm.install');
+  });
+
+  it('reads the version from a 200', async () => {
+    const v = await withFetch(
+      (async () => new Response(JSON.stringify({ version: '1.2.3' }), { status: 200 })) as unknown as typeof fetch,
+      () => fetchLatestVersion(),
+    );
+    expect(v).toBe('1.2.3');
+  });
+
+  it('returns null on a non-200 rather than throwing', async () => {
+    const v = await withFetch(
+      (async () => new Response('nope', { status: 406 })) as unknown as typeof fetch,
+      () => fetchLatestVersion(),
+    );
+    expect(v).toBeNull();
+  });
+
+  it('returns null when the body has no version', async () => {
+    const v = await withFetch(
+      (async () => new Response(JSON.stringify({}), { status: 200 })) as unknown as typeof fetch,
+      () => fetchLatestVersion(),
+    );
+    expect(v).toBeNull();
+  });
+
+  it('returns null when the network throws', async () => {
+    const v = await withFetch(
+      (async () => { throw new Error('ENOTFOUND'); }) as unknown as typeof fetch,
+      () => fetchLatestVersion(),
+    );
+    expect(v).toBeNull();
+  });
+
+  it('targets the scoped package', () => {
+    expect(REGISTRY_URL).toContain('michael-joseph-miller');
+    expect(REGISTRY_URL.endsWith('/latest')).toBe(true);
   });
 });

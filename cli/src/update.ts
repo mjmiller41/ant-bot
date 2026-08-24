@@ -204,10 +204,11 @@ export async function fetchLatestVersion(timeoutMs = 3000): Promise<string | nul
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const res = await fetch(REGISTRY_URL, {
-      signal: ac.signal,
-      headers: { accept: 'application/vnd.npm.install-v1+json' },
-    });
+    // No `application/vnd.npm.install-v1+json` accept header. That abbreviated-metadata type is
+    // only served for the full packument; asking for it on `/latest` gets a 406, which this code
+    // then reported as "could not reach the npm registry". The document is one version's
+    // metadata either way, so there is nothing to abbreviate.
+    const res = await fetch(REGISTRY_URL, { signal: ac.signal });
     if (!res.ok) return null;
     const body = (await res.json()) as { version?: string };
     return typeof body.version === 'string' ? body.version : null;
