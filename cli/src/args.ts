@@ -8,6 +8,7 @@ export const KNOWN_COMMANDS = [
   'doctor',
   'open',
   'skill',
+  'mcp',
   'connector',
   'backup',
   'restore',
@@ -42,6 +43,7 @@ export const COMMAND_FLAGS: Record<Command, FlagSpecs> = {
   doctor: {},
   open: {},
   skill: {},
+  mcp: {},
   connector: {},
   backup: {
     out: { type: 'string' },
@@ -63,7 +65,7 @@ export const COMMAND_FLAGS: Record<Command, FlagSpecs> = {
  * one-value-per-flag model cannot represent. `--help` is still intercepted, so there is one
  * source of help text (help.ts) rather than two that drift.
  */
-const PASSTHROUGH_COMMANDS = new Set<Command>(['connector']);
+const PASSTHROUGH_COMMANDS = new Set<Command>(['mcp', 'connector']);
 
 export interface ParsedArgs {
   command: Command | null;

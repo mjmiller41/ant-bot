@@ -149,6 +149,10 @@ export const api = {
       request<Connector>(`/connectors/${id}`, { method: 'PATCH', ...json(body) }),
     remove: (id: string) => request<{ ok: true }>(`/connectors/${id}`, { method: 'DELETE' }),
     test: (id: string) => request<ConnectorProbeResult>(`/connectors/${id}/test`, { method: 'POST', ...json({}) }),
+    /** Start an interactive sign-in; returns the URL the human must open. */
+    login: (id: string, body: { clientId?: string; clientSecret?: string; scopes?: string[] }) =>
+      request<{ authorizeUrl: string }>(`/connectors/${id}/login`, { method: 'POST', ...json(body) }),
+    logout: (id: string) => request<{ ok: true }>(`/connectors/${id}/login`, { method: 'DELETE' }),
   },
 
   routines: {

@@ -8,6 +8,7 @@ import { seedBuiltinRules } from './permissions/rules.js';
 import { makeAutoReviewer, NullAutoReviewer } from './permissions/autoreview.js';
 import { BotManager } from './bots/manager.js';
 import { planConnectorMount, extractSecretRefs, buildMcpServerConfig } from './bots/connectors.js';
+import { ConnectorAuthService } from './connectors/auth.js';
 import { loadConfig, type AntbotConfig } from './config/config.js';
 import { logger } from './util/log.js';
 import type { Settings } from '@antbot/contract';
@@ -47,6 +48,7 @@ export interface App {
   browser?: any;
   skills?: any;
   secrets?: SecretsService;
+  connectorAuth?: ConnectorAuthService;
   lastUserActivity: { at: number };
   /** Root of the local plugin carrying installed skills. */
   skillPluginPath?: string;
@@ -138,7 +140,15 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
         const refs = extractSecretRefs(connector.config);
         try {
           const secrets = refs.length ? await app.secrets!.resolve(refs) : new Map<string, string | null>();
-          servers[connector.name] = buildMcpServerConfig(connector, secrets);
+          const built = buildMcpServerConfig(connector, secrets) as Record<string, unknown>;
+          // A signed-in connector carries a bearer token that is refreshed here if it is close to
+          // expiring. Static `{{secret:...}}` headers, if any, are already in `built` and win —
+          // an explicitly configured Authorization is the human being deliberate.
+          const auth = await app.connectorAuth?.authHeader(connector.name);
+          if (auth && built.headers && !('Authorization' in (built.headers as object))) {
+            built.headers = { ...(built.headers as Record<string, string>), ...auth };
+          }
+          servers[connector.name] = built;
           mounted.push({ name: connector.name, description: connector.description });
         } catch (err) {
           // A secret that vanished between planning and reading. Same treatment as a missing one.
@@ -156,6 +166,7 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
       `${cfg.paths.secrets}.index`,
     );
     log.info(`secrets backend: ${app.secrets.backendName}`);
+    app.connectorAuth = new ConnectorAuthService(app.secrets, cfg.port);
   } catch (err) {
     log.warn('secrets backend unavailable', (err as Error).message);
   }

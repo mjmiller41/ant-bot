@@ -7,6 +7,8 @@ const create = vi.fn();
 const update = vi.fn();
 const remove = vi.fn();
 const test_ = vi.fn();
+const login = vi.fn();
+const logout = vi.fn();
 const secretsList = vi.fn();
 
 vi.mock('../api/client.js', () => ({
@@ -18,6 +20,8 @@ vi.mock('../api/client.js', () => ({
       update: (id: string, b: unknown) => update(id, b),
       remove: (id: string) => remove(id),
       test: (id: string) => test_(id),
+      login: (id: string, b: unknown) => login(id, b),
+      logout: (id: string) => logout(id),
     },
     secrets: { list: () => secretsList() },
   },
@@ -26,7 +30,7 @@ vi.mock('../api/client.js', () => ({
 const row = (over: Record<string, unknown> = {}) => ({
   id: 'c1', name: 'github', description: 'issues and PRs', enabled: true, createdAt: 0,
   config: { transport: 'stdio', command: 'npx', args: [], env: {} },
-  missingSecrets: [] as string[], ...over,
+  missingSecrets: [] as string[], signedIn: false, ...over,
 });
 
 beforeEach(() => {
@@ -36,6 +40,8 @@ beforeEach(() => {
   update.mockResolvedValue(row());
   remove.mockResolvedValue({ ok: true });
   secretsList.mockResolvedValue({ backend: 'file', names: ['GH_TOKEN'] });
+  login.mockResolvedValue({ authorizeUrl: 'https://accounts.example.com/auth?x=1' });
+  logout.mockResolvedValue({ ok: true });
 });
 
 describe('ConnectorsScreen', () => {
@@ -143,5 +149,53 @@ describe('ConnectorsScreen', () => {
     secretsList.mockRejectedValue(new Error('no backend'));
     render(<ConnectorsScreen />);
     expect(await screen.findByText('github')).toBeInTheDocument();
+  });
+});
+
+describe('ConnectorsScreen — interactive sign-in', () => {
+  const httpRow = (over: Record<string, unknown> = {}) =>
+    row({ config: { transport: 'http', url: 'https://x.dev/mcp', headers: {} }, ...over });
+
+  it('opens the provider URL in a new tab', async () => {
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    list.mockResolvedValue([httpRow()]);
+    render(<ConnectorsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(login).toHaveBeenCalledWith('c1', {}));
+    await waitFor(() => expect(open).toHaveBeenCalledWith('https://accounts.example.com/auth?x=1', '_blank', 'noopener'));
+  });
+
+  it('shows a signed-in connector as such, and offers sign out', async () => {
+    list.mockResolvedValue([httpRow({ signedIn: true })]);
+    render(<ConnectorsScreen />);
+    expect(await screen.findByText('signed in')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(logout).toHaveBeenCalledWith('c1'));
+  });
+
+  // Providers without dynamic registration need a client ID from the human. Surfacing a field
+  // beats making them read the error and work out what to paste where.
+  it('asks for a client ID when the provider will not register ant-bot itself', async () => {
+    const { ApiError } = await import('../api/client.js');
+    login.mockRejectedValue(new ApiError('accounts.google.com does not support automatic app registration, so it needs a client ID you create yourself.', 400));
+    list.mockResolvedValue([httpRow()]);
+    render(<ConnectorsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByPlaceholderText(/client ID/)).toBeInTheDocument();
+
+    login.mockResolvedValue({ authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth?x=1' });
+    vi.stubGlobal('open', vi.fn());
+    fireEvent.change(screen.getByPlaceholderText(/client ID/), { target: { value: 'abc.apps.googleusercontent.com' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Sign in' })[1]!);
+    await waitFor(() => expect(login).toHaveBeenLastCalledWith('c1', { clientId: 'abc.apps.googleusercontent.com' }));
+  });
+
+  // stdio servers take credentials in env; there is nothing to sign in to.
+  it('offers no sign-in for a stdio connector', async () => {
+    list.mockResolvedValue([row()]);
+    render(<ConnectorsScreen />);
+    await screen.findByText('github');
+    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 });

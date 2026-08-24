@@ -13,7 +13,10 @@ interface ConnectorRow {
   enabled: boolean;
   config: Record<string, unknown>;
   missingSecrets: string[];
+  signedIn: boolean;
 }
+
+interface LoginResponse { authorizeUrl: string }
 
 interface ProbeResponse {
   ok: boolean;
@@ -91,8 +94,8 @@ async function findByName(port: number, name: string): Promise<ConnectorRow | un
 export async function runConnectorCommand(argv: string[], port: number): Promise<number> {
   const sub = argv[0];
   const hint = (): void => {
-    console.error(dim('Subcommands: list, add, enable, disable, remove, test.'));
-    console.error(dim('Run `antbot connector --help` for the full usage.'));
+    console.error(dim('Subcommands: list, add, login, logout, enable, disable, remove, test.'));
+    console.error(dim('Run `antbot mcp --help` for the full usage.'));
   };
   if (!sub) {
     console.error(red('antbot connector needs a subcommand.'));
@@ -121,7 +124,8 @@ export async function runConnectorCommand(argv: string[], port: number): Promise
       }
       for (const c of rows!) {
         const state = c.enabled ? '' : dim(' (disabled)');
-        console.log(`${bold(c.name)}  ${dim(transportOf(c))}${state}`);
+        const signed = c.signedIn ? green(' signed in') : '';
+        console.log(`${bold(c.name)}  ${dim(transportOf(c))}${state}${signed}`);
         if (c.description) console.log(`  ${c.description}`);
         if (c.missingSecrets.length) {
           console.log(yellow(`  missing secret(s): ${c.missingSecrets.join(', ')} — this connector will not mount`));
@@ -188,6 +192,54 @@ export async function runConnectorCommand(argv: string[], port: number): Promise
       }
       await deleteJson(port, `/api/connectors/${match.id}`);
       console.log(green(`Removed connector "${name}". Bot assignments for it are gone too.`));
+      return 0;
+    }
+
+    case 'login': {
+      const name = argv[1];
+      if (!name) {
+        console.error(red('Usage: antbot mcp login <name> [--client-id ID] [--client-secret SECRET]'));
+        return 2;
+      }
+      if (!(await load())) return 1;
+      const match = rows!.find((c) => c.name === name);
+      if (!match) {
+        console.error(red(`No connector named "${name}".`));
+        return 1;
+      }
+      const body: Record<string, unknown> = {};
+      const cid = flagValue(argv, '--client-id');
+      const csec = flagValue(argv, '--client-secret');
+      const scopes = flagValue(argv, '--scopes');
+      if (cid) body.clientId = cid;
+      if (csec) body.clientSecret = csec;
+      if (scopes) body.scopes = scopes.split(',').map((x) => x.trim()).filter(Boolean);
+      try {
+        const res = await postJson<LoginResponse>(port, `/api/connectors/${match.id}/login`, body);
+        console.log(bold('Open this URL to sign in:'));
+        console.log(`  ${res.authorizeUrl}`);
+        console.log(dim('The browser returns to ant-bot when you are done. Then: antbot mcp test ' + name));
+        return 0;
+      } catch (err) {
+        console.error(red((err as Error).message));
+        return 1;
+      }
+    }
+
+    case 'logout': {
+      const name = argv[1];
+      if (!name) {
+        console.error(red('Usage: antbot mcp logout <name>'));
+        return 2;
+      }
+      if (!(await load())) return 1;
+      const match = rows!.find((c) => c.name === name);
+      if (!match) {
+        console.error(red(`No connector named "${name}".`));
+        return 1;
+      }
+      await deleteJson(port, `/api/connectors/${match.id}/login`);
+      console.log(green(`Signed out of "${name}".`));
       return 0;
     }
 

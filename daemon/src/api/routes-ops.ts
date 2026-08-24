@@ -57,7 +57,12 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
   /** Secret values never appear here: rows hold `{{secret:NAME}}` references and nothing more. */
   f.get('/api/connectors', async () => {
     const available = new Set(app.secrets?.list() ?? []);
-    return store.listConnectors().map((c) => ({ ...c, missingSecrets: computeMissingSecrets(c, available) }));
+    return store.listConnectors().map((c) => ({
+      ...c,
+      missingSecrets: computeMissingSecrets(c, available),
+      // Names only — knowing a connector is signed in never requires reading its token.
+      signedIn: app.connectorAuth?.isAuthorized(c.name) ?? false,
+    }));
   });
 
   f.post('/api/connectors', async (req, reply) => {
@@ -82,6 +87,70 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
     store.deleteConnector(req.params.id);
     return { ok: true };
   });
+
+  /**
+   * Begin an interactive sign-in. Returns the URL the human must open; the browser comes back to
+   * the callback below. `clientId` is needed only for providers without dynamic registration.
+   */
+  f.post<{ Params: { id: string }; Body: { clientId?: string; clientSecret?: string; scopes?: string[] } }>(
+    '/api/connectors/:id/login',
+    async (req, reply) => {
+      const connector = store.getConnector(req.params.id);
+      if (!connector) return reply.code(404).send({ error: 'No such connector' });
+      if (!app.connectorAuth) return reply.code(503).send({ error: 'Secrets backend unavailable, so sign-in cannot be stored' });
+      try {
+        const { authorizeUrl } = await app.connectorAuth.beginLogin(connector, req.body ?? {});
+        return { authorizeUrl };
+      } catch (err) {
+        return reply.code(400).send({ error: (err as Error).message });
+      }
+    },
+  );
+
+  f.delete<{ Params: { id: string } }>('/api/connectors/:id/login', async (req, reply) => {
+    const connector = store.getConnector(req.params.id);
+    if (!connector) return reply.code(404).send({ error: 'No such connector' });
+    await app.connectorAuth?.signOut(connector.name);
+    return { ok: true };
+  });
+
+  /**
+   * Where the authorization server sends the human back. Renders a plain page rather than JSON:
+   * this is the one route a person lands on in a browser.
+   */
+  f.get<{ Querystring: { code?: string; state?: string; error?: string; error_description?: string } }>(
+    '/api/connectors/oauth/callback',
+    async (req, reply) => {
+      const page = (title: string, detail: string, ok: boolean): string =>
+        `<!doctype html><meta charset=utf-8><title>${title}</title>
+         <body style="font-family:system-ui;background:#0b0d10;color:#e6e8eb;padding:3rem;max-width:40rem">
+         <h1 style="color:${ok ? '#4ade80' : '#f87171'}">${title}</h1><p>${detail}</p>
+         <p style="color:#9aa4b2">You can close this tab and return to ant-bot.</p>`;
+
+      const { code, state, error, error_description: desc } = req.query;
+      if (error) {
+        return reply.type('text/html').send(page('Sign-in failed', `${error}: ${desc ?? ''}`, false));
+      }
+      if (!code || !state) {
+        return reply.type('text/html').send(page('Sign-in failed', 'The provider did not return a code.', false));
+      }
+      if (!app.connectorAuth) {
+        return reply.type('text/html').send(page('Sign-in failed', 'The secrets backend is unavailable.', false));
+      }
+      try {
+        const { connectorName } = await app.connectorAuth.completeLogin(state, code);
+        bus.publish({
+          type: 'notify', botId: null, threadId: null,
+          title: 'Connector signed in',
+          body: `${connectorName} is now authorised.`,
+          level: 'info',
+        });
+        return reply.type('text/html').send(page('Signed in', `<b>${connectorName}</b> is now authorised.`, true));
+      } catch (err) {
+        return reply.type('text/html').send(page('Sign-in failed', (err as Error).message, false));
+      }
+    },
+  );
 
   /**
    * Connect to the server and list its tools. Secrets are resolved here, inside the daemon, and

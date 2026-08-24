@@ -97,7 +97,11 @@ export type UpdateConnectorRequest = z.infer<typeof UpdateConnectorRequest>;
  * that have nothing behind them — surfaced so a connector that will silently fail to mount
  * says so in the UI before a turn runs, rather than going quiet at turn time.
  */
-export type ApiConnector = Connector & { missingSecrets: string[] };
+export type ApiConnector = Connector & {
+  missingSecrets: string[];
+  /** Whether an interactive sign-in has been completed and stored for this connector. */
+  signedIn: boolean;
+};
 
 /**
  * What `POST /api/connectors/:id/test` reports. Tool names and descriptions only — never config.

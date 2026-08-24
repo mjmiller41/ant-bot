@@ -891,21 +891,35 @@ Note the limitation: ant-bot itself only sends **static** credentials. A server 
 interactive OAuth sign-in — most first-party Google and Microsoft endpoints — has nowhere to
 complete that sign-in from a Bot's turn.
 
-There is one route worth trying for those. ant-bot runs turns through the `claude` CLI, and that
-CLI can complete an OAuth flow for an MCP server and store the result:
+### Signing in to a connector
+
+Servers that want an interactive sign-in rather than a static token have their own flow. ant-bot
+does this itself — it does not borrow the `claude` CLI's credentials:
 
 ```bash
-claude mcp add --transport http gmail-mcp https://gmailmcp.googleapis.com/mcp/v1
-claude mcp login gmail-mcp      # opens a browser; complete the sign-in there
+antbot mcp login gmail
 ```
 
-Use the **same name** as the ant-bot connector, so the stored credential and the server ant-bot
-mounts refer to the same thing. Then run a turn: if the Bot's next message no longer reports
-`needs authentication`, it worked. This is not a supported ant-bot feature — it is the underlying
-CLI's own credential store, and whether it applies to a server ant-bot mounts is worth confirming
-before relying on it. `claude mcp logout <name>` clears it again.
+Or press **Sign in** on the Connectors screen. ant-bot asks the server what it accepts, registers
+itself with the provider if the provider allows that, and prints (or opens) a URL. You sign in
+there; the browser returns to ant-bot and the tokens go into your keychain. From then on every
+turn gets a fresh access token, refreshed automatically before it expires.
 
-Otherwise, prefer a server that accepts a long-lived token or API key in a header.
+Some providers — Google among them — do not let an application register itself, and want a client
+ID you create in their own console. ant-bot says so when that happens and asks for one:
+
+```bash
+antbot mcp login gmail --client-id YOUR_ID.apps.googleusercontent.com
+```
+
+When you create that client, add this as an **authorised redirect URI**:
+
+```
+http://127.0.0.1:4780/api/connectors/oauth/callback
+```
+
+`antbot mcp logout <name>` forgets the sign-in. Tokens live in the keychain like any other
+secret — never in the database, never in an API response, never in a Bot's context.
 
 Other statuses you may see: `failed to start` (wrong command or URL — `connector test` will show
 the same), and `did not finish connecting in time`.

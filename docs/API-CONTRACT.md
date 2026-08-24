@@ -58,10 +58,13 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 | GET | `/api/computer/status` | – | `{ available: boolean, mode, pages: {botId,url,title}[] }` |
 | POST | `/api/computer/takeover` | `{ botId }` | `{ ok: boolean, message: string }` |
 | DELETE | `/api/computer/takeover` | `{ botId }` | `{ ok: true }` |
-| GET | `/api/connectors` | – | `ApiConnector[]` (`Connector` + `missingSecrets: string[]`) |
+| GET | `/api/connectors` | – | `ApiConnector[]` (`Connector` + `missingSecrets`, `signedIn`) |
 | POST | `/api/connectors` | `CreateConnectorRequest` | `Connector`; 409 if the name is taken |
 | PATCH | `/api/connectors/:id` | `UpdateConnectorRequest` | `Connector` (no rename — see below) |
 | DELETE | `/api/connectors/:id` | – | `{ ok: true }`; also drops every bot's assignment |
+| POST | `/api/connectors/:id/login` | `{clientId?, clientSecret?, scopes?}` | `{ authorizeUrl }` |
+| DELETE | `/api/connectors/:id/login` | – | `{ ok: true }` (forget a stored sign-in) |
+| GET | `/api/connectors/oauth/callback` | – | HTML — where the provider returns the human |
 | POST | `/api/connectors/:id/test` | – | `ConnectorProbeResult` `{ok, tools[], error?, authHint?}` |
 | GET | `/api/bots/:id/connectors` | – | `Connector[]` assigned to this bot |
 | PUT | `/api/bots/:id/connectors` | `{ connectorIds: string[] }` | `{ ok: true }` |

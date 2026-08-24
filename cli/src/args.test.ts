@@ -117,14 +117,25 @@ describe('parseArgs', () => {
 });
 
 describe('help', () => {
+  // `connector` is the older name for `mcp`. It keeps working, but the global help lists the
+  // name people should learn, so it is exempt from both checks below.
+  const ALIASES: Record<string, string> = { connector: 'mcp' };
+  const primary = KNOWN_COMMANDS.filter((c) => !(c in ALIASES));
+
   it('documents every known command in the global help', () => {
-    for (const command of KNOWN_COMMANDS) {
+    for (const command of primary) {
       expect(GLOBAL_HELP).toContain(command);
     }
   });
 
+  it('routes an alias to the command it stands for', () => {
+    for (const [alias, target] of Object.entries(ALIASES)) {
+      expect(commandHelp(alias as never)).toBe(commandHelp(target as never));
+    }
+  });
+
   it('has a non-empty help page for every known command', () => {
-    for (const command of KNOWN_COMMANDS) {
+    for (const command of primary) {
       expect(commandHelp(command)).toMatch(new RegExp(`^antbot ${command} —`));
       // `skill` lists its subcommands under a multi-line Usage block.
       expect(commandHelp(command)).toMatch(new RegExp(`Usage:(\\n| )+antbot ${command}`));

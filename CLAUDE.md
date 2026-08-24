@@ -35,8 +35,8 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 41 test files / 796 tests passing**
-(contract 34, daemon 537, ui 86, cli 139). The table in `README.md` matches; if you touch it,
+Baseline as of this checkout: **build clean, typecheck clean, 43 test files / 837 tests passing**
+(contract 34, daemon 573, ui 90, cli 140). The table in `README.md` matches; if you touch it,
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
@@ -78,6 +78,7 @@ Daemon internals:
 | `src/agent/session.ts` | Thin wrapper over the SDK's `query()`; normalizes SDK messages into `TurnEvent`s. |
 | `src/permissions/` | `gateway.ts` (decision flow) · `rules.ts` (matcher + `BUILTIN_RULES`) · `local.ts` (workspace boundary) · `autoreview.ts` (Haiku) · `secrets.ts` (keychain). |
 | `src/bots/connectors.ts` | Pure core for MCP connectors: secret-ref extraction, mount planning, config building. |
+| `src/connectors/` | `oauth.ts` (RFC 9728 discovery, PKCE, token exchange/refresh) · `auth.ts` (sign-in flow, keychain-backed tokens). |
 | `src/bots/mcpProbe.ts` | Hand-rolled MCP client behind `antbot connector test`. Advisory only, never in a turn. |
 | `src/skills/` | `skills.ts` (store, frontmatter) · `install.ts` (source parsing, git/url staging) · `plugin.ts` (local-plugin layout) · `bundled.ts` (shipped-skill sync + ledger) · `spec.ts` (Agent Skills spec validation). |
 | `src/scheduler/scheduler.ts` | node-cron per routine, own `nextRunAt` cron evaluator, away-guard logic. |
@@ -143,6 +144,13 @@ the last, and unordered input inverts mouse down/up and shuffles typing, which p
 keys work" rather than as a bug. Input does not pass the Permission
 Gateway on purpose: the gateway governs what *bots* do, and this is the human acting as
 themselves. Do not add a path that dispatches input without that check.
+
+**Connector OAuth tokens live in the keychain and nowhere else.** `ConnectorAuthService` stores
+one JSON blob per connector under `antbot:oauth:<name>`, namespaced so it cannot collide with a
+user secret. `isAuthorized()` answers from names alone and never reads a value. A token that
+cannot be refreshed makes `authHeader()` return null — the connector is not mounted, rather than
+mounted with a credential known to be dead. The `state` in the OAuth callback is the CSRF guard:
+a callback ant-bot did not start is refused, never exchanged.
 
 **Connector secret values exist in exactly one place.** A connector row stores `{{secret:NAME}}`
 references; `buildMcpServerConfig()` is the only code that turns one into a value, and its output

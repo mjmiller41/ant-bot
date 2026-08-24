@@ -4,6 +4,22 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-08-24
+
+### Added
+
+- **ant-bot signs in to MCP servers itself.** Connectors that need an interactive sign-in rather
+  than a static token are now first class: `antbot mcp login <name>`, or **Sign in** on the
+  Connectors screen. ant-bot discovers what the server accepts (RFC 9728 from the server's own
+  401), registers itself with the provider where dynamic client registration is supported, runs an
+  OAuth 2.1 authorization-code flow with PKCE, and stores the tokens in the keychain. Every turn
+  gets a fresh access token, refreshed before expiry. `antbot mcp logout <name>` forgets it.
+  - Providers that do not permit self-registration — Google among them — are handled by accepting
+    a client ID you create yourself; ant-bot says so rather than failing obscurely.
+  - Tokens are bound to the server they were issued for (RFC 8707), and a callback whose state
+    ant-bot did not issue is refused.
+- **`antbot mcp`** is the command for all of this. `antbot connector` still works.
+
 ## [0.2.3] — 2026-08-24
 
 ### Fixed

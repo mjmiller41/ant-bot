@@ -217,6 +217,8 @@ async function main(): Promise<void> {
       process.exit(await runSkillCommand(parsed.positionals, cfg.port));
       return;
     }
+    // `connector` is the older name for the same thing, kept working.
+    case 'mcp':
     case 'connector': {
       const cfg = loadConfig();
       process.exit(await runConnectorCommand(parsed.positionals, cfg.port));

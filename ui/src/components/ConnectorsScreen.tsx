@@ -195,6 +195,31 @@ function AddConnectorForm({ onCreated, secretNames }: { onCreated: () => void; s
 function ConnectorRow({ connector, onChanged }: { connector: ApiConnector; onChanged: () => void }) {
   const [probe, setProbe] = useState<ConnectorProbeResult | null>(null);
   const [testing, setTesting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [clientId, setClientId] = useState('');
+  const [needsClientId, setNeedsClientId] = useState(false);
+
+  async function signIn() {
+    setAuthError(null);
+    try {
+      const { authorizeUrl } = await api.connectors.login(connector.id, clientId ? { clientId } : {});
+      // A new tab, not a redirect: the person keeps ant-bot open, and the provider returns to the
+      // daemon's callback which tells them to come back here.
+      window.open(authorizeUrl, '_blank', 'noopener');
+      setNeedsClientId(false);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not start sign-in';
+      setAuthError(message);
+      // Providers without dynamic registration need a client ID from the human; show the field
+      // rather than making them read the error and guess what to do.
+      if (/client ID/i.test(message)) setNeedsClientId(true);
+    }
+  }
+
+  async function signOut() {
+    await api.connectors.logout(connector.id);
+    onChanged();
+  }
 
   async function test() {
     setTesting(true);
@@ -221,12 +246,22 @@ function ConnectorRow({ connector, onChanged }: { connector: ApiConnector; onCha
               {connector.description}
             </p>
           )}
+          {connector.signedIn && <span className="ml-2 text-xs text-(--color-green)">signed in</span>}
           {connector.missingSecrets.length > 0 && (
             <p className="text-xs text-(--color-amber)">
               missing secret: {connector.missingSecrets.join(', ')} — this connector will not start
             </p>
           )}
         </div>
+        {connector.config.transport !== 'stdio' && (
+          <button
+            type="button"
+            onClick={connector.signedIn ? signOut : signIn}
+            className="rounded border border-(--color-border) px-2 py-1 text-xs"
+          >
+            {connector.signedIn ? 'Sign out' : 'Sign in'}
+          </button>
+        )}
         <button type="button" onClick={test} disabled={testing} className="rounded border border-(--color-border) px-2 py-1 text-xs disabled:opacity-40">
           {testing ? 'Testing…' : 'Test'}
         </button>
@@ -251,6 +286,21 @@ function ConnectorRow({ connector, onChanged }: { connector: ApiConnector; onCha
           Delete
         </button>
       </div>
+
+      {authError && <p className="mt-2 text-xs text-(--color-red)">{authError}</p>}
+      {needsClientId && (
+        <div className="mt-2 flex gap-1">
+          <input
+            className="flex-1 rounded border border-(--color-border) bg-(--color-bg) px-2 py-1 text-xs"
+            placeholder="client ID from the provider's console"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+          />
+          <button type="button" onClick={signIn} disabled={!clientId.trim()} className="rounded border border-(--color-border) px-2 py-1 text-xs disabled:opacity-40">
+            Sign in
+          </button>
+        </div>
+      )}
 
       {probe && (
         <div className="mt-2 rounded bg-(--color-bg-elevated) p-2 text-xs">
