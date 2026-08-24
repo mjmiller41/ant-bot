@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { Card, Approval, RosterEntry } from '@antbot/contract';
-import { CardView } from './Cards.js';
+import { CardView, describeResult } from './Cards.js';
 import { useStore } from '../store/useStore.js';
 
 function makeApproval(overrides: Partial<Approval> = {}): Approval {
@@ -39,6 +39,23 @@ describe('CardView', () => {
     expect(screen.getByText('ls -la /workspace')).toBeInTheDocument();
     expect(screen.getByText(/ok/i)).toBeInTheDocument();
     expect(screen.getByText(/"command"/)).toBeInTheDocument();
+  });
+
+  // A mail search returns a page of JSON; rendering it verbatim buries the bot's actual reply.
+  it('collapses a JSON result behind a line that says what came back', () => {
+    const result = JSON.stringify({ threads: [{ id: '1' }, { id: '2' }, { id: '3' }] });
+    const card: Card = { type: 'tool', toolName: 'mcp__gmail__search_threads', summary: 'gmail: search_threads query: is:unread', result, status: 'ok' };
+    render(<CardView card={card} />);
+    expect(screen.getByText(/Result — 3 threads/)).toBeInTheDocument();
+    // Present, but inside a closed <details> — not on screen until asked for.
+    expect(screen.getByText(new RegExp('"threads"')).closest('details')).not.toHaveAttribute('open');
+  });
+
+  it('leaves a plain-text result visible, because that is usually the point', () => {
+    const card: Card = { type: 'tool', toolName: 'Bash', summary: 'ls', result: 'a.txt\nb.txt', status: 'ok' };
+    render(<CardView card={card} />);
+    expect(screen.getByText(/a\.txt/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Result —/)).not.toBeInTheDocument();
   });
 
   it('renders a running tool card with a running status pill', () => {
@@ -98,5 +115,28 @@ describe('CardView', () => {
     const card: Card = { type: 'error', message: 'Tool failed: permission denied' };
     render(<CardView card={card} />);
     expect(screen.getByText('Tool failed: permission denied')).toBeInTheDocument();
+  });
+});
+
+describe('describeResult', () => {
+  it('names the list a result carries', () => {
+    expect(describeResult(JSON.stringify({ threads: [1, 2] })).label).toMatch(/^2 threads · /);
+    expect(describeResult(JSON.stringify([1, 2, 3])).label).toMatch(/^3 items · /);
+    expect(describeResult(JSON.stringify({ threads: [1] })).label).toMatch(/^1 threads · /);
+  });
+
+  it('falls back to the keys when nothing is a list', () => {
+    expect(describeResult(JSON.stringify({ id: 'x', subject: 's' })).label).toMatch(/^id, subject · /);
+    expect(describeResult(JSON.stringify({ a: 1, b: 2, c: 3, d: 4, e: 5 })).label).toMatch(/\+1 · /);
+  });
+
+  it('treats text as text, so it is not hidden', () => {
+    expect(describeResult('ok')).toEqual({ label: 'ok', json: false });
+    expect(describeResult('one\ntwo').label).toBe('one · 2 lines');
+  });
+
+  // A truncated or malformed blob must not be announced as structured data.
+  it('does not claim JSON it could not parse', () => {
+    expect(describeResult('{"threads": [').json).toBe(false);
   });
 });

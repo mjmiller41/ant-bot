@@ -517,6 +517,28 @@ export function describeMcpStatus(status: string): string {
   }
 }
 
+/**
+ * Tool arguments as `key: value`, not JSON.
+ *
+ * These land in an approval card and in the thread, where a raw object is noise a person has to
+ * decode before deciding anything. Nested objects collapse to `{…}`: naming the key is useful,
+ * dumping its contents is the thing being avoided.
+ */
+export function summarizeArgs(input: unknown): string {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return '';
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    if (v === undefined || v === null || v === '') continue;
+    let s: string;
+    if (typeof v === 'string') s = v;
+    else if (typeof v === 'number' || typeof v === 'boolean') s = String(v);
+    else if (Array.isArray(v)) s = `${v.length} item${v.length === 1 ? '' : 's'}`;
+    else s = '{…}';
+    parts.push(`${k}: ${s.length > 60 ? `${s.slice(0, 60)}…` : s}`);
+  }
+  return parts.join(', ');
+}
+
 export function summarizeTool(name: string, input: unknown): string {
   const o = (input ?? {}) as Record<string, unknown>;
   const s = (k: string): string => (typeof o[k] === 'string' ? (o[k] as string) : '');
@@ -533,7 +555,10 @@ export function summarizeTool(name: string, input: unknown): string {
   // and the tool beats an approval card that reads as raw JSON. Matched last so the built-in
   // servers above keep their own summaries.
   const mcp = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(name);
-  if (mcp) return `${mcp[1]}: ${mcp[2]} ${JSON.stringify(input ?? {})}`.slice(0, 160);
-  const j = JSON.stringify(input ?? {});
-  return j.length > 160 ? `${j.slice(0, 160)}…` : j;
+  if (mcp) {
+    const args = summarizeArgs(input);
+    return `${mcp[1]}: ${mcp[2]}${args ? ` ${args}` : ''}`.slice(0, 160);
+  }
+  const args = summarizeArgs(input);
+  return args.length > 160 ? `${args.slice(0, 160)}…` : args;
 }

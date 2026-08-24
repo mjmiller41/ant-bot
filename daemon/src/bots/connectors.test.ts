@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Connector, ConnectorConfig } from '@antbot/contract';
-import { summarizeTool, describeMcpStatus } from './manager.js';
+import { summarizeTool, summarizeArgs, describeMcpStatus } from './manager.js';
 import {
   SECRET_REF_RE,
   extractSecretRefs,
@@ -157,11 +157,11 @@ describe('summarizeTool for connector tools', () => {
   // server is being asked to act.
   it('names the connector and the tool', () => {
     expect(summarizeTool('mcp__github__create_issue', { title: 'Bug' }))
-      .toBe('github: create_issue {"title":"Bug"}');
+      .toBe('github: create_issue title: Bug');
   });
 
   it('handles a hyphenated connector and an underscored tool name', () => {
-    expect(summarizeTool('mcp__my-srv__do_a_thing', {})).toBe('my-srv: do_a_thing {}');
+    expect(summarizeTool('mcp__my-srv__do_a_thing', {})).toBe('my-srv: do_a_thing');
   });
 
   // The built-in servers keep their own hand-written summaries.
@@ -170,8 +170,8 @@ describe('summarizeTool for connector tools', () => {
     expect(summarizeTool('mcp__browser__browser_click', { selector: '#go' })).toBe('#go');
   });
 
-  it('still falls back to JSON for a non-MCP tool', () => {
-    expect(summarizeTool('SomethingElse', { a: 1 })).toBe('{"a":1}');
+  it('falls back to readable arguments for a non-MCP tool', () => {
+    expect(summarizeTool('SomethingElse', { a: 1 })).toBe('a: 1');
   });
 
   it('truncates a long summary', () => {
@@ -197,5 +197,26 @@ describe('describeMcpStatus', () => {
 
   it('passes an unknown status through rather than inventing one', () => {
     expect(describeMcpStatus('something-new')).toBe('something-new');
+  });
+});
+
+describe('summarizeArgs', () => {
+  // Arguments end up in an approval card. A person deciding whether to allow a call should not
+  // have to parse JSON to see what is being asked.
+  it('reads as words, not JSON', () => {
+    expect(summarizeArgs({ query: 'is:unread', maxResults: 50 })).toBe('query: is:unread, maxResults: 50');
+  });
+
+  it('counts a list and hides a nested object rather than dumping it', () => {
+    expect(summarizeArgs({ to: ['a@b.c', 'd@e.f'], body: { html: '…' } })).toBe('to: 2 items, body: {…}');
+  });
+
+  it('skips empty values and truncates a long one', () => {
+    expect(summarizeArgs({ a: '', b: null, c: 'x'.repeat(80) })).toBe(`c: ${'x'.repeat(60)}…`);
+  });
+
+  it('says nothing at all for no arguments', () => {
+    expect(summarizeArgs({})).toBe('');
+    expect(summarizeArgs(undefined)).toBe('');
   });
 });

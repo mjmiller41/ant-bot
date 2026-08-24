@@ -4,6 +4,18 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026-08-24
+
+### Changed
+
+- **JSON stays out of the thread.** A tool that returns structured data — a mail search, a thread
+  fetch — now shows one line saying what came back (`Result — 50 threads · 82.1 KB`) with the JSON
+  behind it, instead of a page of it between you and the Bot's actual reply. Plain-text results
+  stay visible, because that is usually the thing you wanted to see.
+- **Tool arguments read as words.** `gmail: search_threads query: is:unread, maxResults: 50`
+  rather than a JSON object, in the thread and on every approval card. Lists are counted and
+  nested objects collapse to `{…}`.
+
 ## [0.4.1] — 2026-08-24
 
 ### Fixed
