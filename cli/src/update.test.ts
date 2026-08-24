@@ -11,7 +11,6 @@ import {
   REGISTRY_URL,
   checkForUpdate,
   UPDATE_CHECK_TTL_MS,
-  REGISTRY_URL,
   fetchLatestVersion,
   type UpdateCache,
 } from './update.js';
