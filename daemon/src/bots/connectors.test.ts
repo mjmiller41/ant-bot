@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Connector, ConnectorConfig } from '@antbot/contract';
-import { summarizeTool } from './manager.js';
+import { summarizeTool, describeMcpStatus } from './manager.js';
 import {
   SECRET_REF_RE,
   extractSecretRefs,
@@ -176,5 +176,26 @@ describe('summarizeTool for connector tools', () => {
 
   it('truncates a long summary', () => {
     expect(summarizeTool('mcp__gh__x', { blob: 'y'.repeat(400) }).length).toBeLessThanOrEqual(160);
+  });
+});
+
+describe('describeMcpStatus', () => {
+  // The status the SDK reports is a bare token. A bot whose connector shows "needs-auth" and
+  // says nothing else is indistinguishable from a bot ignoring its connector.
+  it('explains needs-auth in terms of what to do about it', () => {
+    expect(describeMcpStatus('needs-auth')).toMatch(/authentication/i);
+  });
+
+  it('points a failed server at the test command', () => {
+    expect(describeMcpStatus('failed')).toMatch(/antbot connector test/);
+  });
+
+  it('covers pending and disabled', () => {
+    expect(describeMcpStatus('pending')).toMatch(/connect/i);
+    expect(describeMcpStatus('disabled')).toMatch(/disabled/);
+  });
+
+  it('passes an unknown status through rather than inventing one', () => {
+    expect(describeMcpStatus('something-new')).toBe('something-new');
   });
 });

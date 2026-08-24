@@ -350,12 +350,15 @@ Bot's tier.
 
 ### Bot settings
 
-Open a Bot's thread and click **Bot settings** in the header. The panel has five sections.
+Open a Bot's thread and click **Bot settings** in the header. The panel has six sections.
 
 **Profile** — change the emoji (click the avatar for the full picker), name, title, description,
 and model tier. Click **Save profile** to apply. Changes take effect on the Bot's next turn.
 
-**Actions** — a row of buttons:
+**Actions** — a row of buttons. **Start fresh** clears this Bot's conversation and the model's
+accumulated context, keeping its description, memory, skills, connectors, routines and files —
+use it when a Bot has gone off track, or after changing something it should reconsider from
+scratch. It asks first, and refuses while the Bot is working. The other buttons:
 
 | Button | Effect |
 | --- | --- |
@@ -864,6 +867,33 @@ Bot's context, or a log.
 If a referenced secret does not exist, the Connectors screen flags it and the connector is simply
 not mounted — the Bot's turn still runs, without that connector. `antbot connector list` shows the
 same warning.
+
+### When a Bot cannot see a connector's tools
+
+Assignment is not the only thing that has to be true. The Bot's next turn tells you: if a
+connector did not come up, a warning appears in the thread naming it and why.
+
+The usual cause is authentication. `antbot connector test` and the **Test** button connect and
+list the server's tools — but many servers will describe their tools to anyone and only demand
+credentials on the first real call. A green test therefore means *reachable*, not *usable*, and
+the test says so when no credential was configured. What settles it is the turn: the Bot reports
+`needs authentication` and the daemon log carries the same line.
+
+If you see that, the server wants a credential ant-bot did not send. Add one as a header:
+
+```bash
+antbot connector remove gmail-mcp
+antbot connector add gmail-mcp --url https://example.com/mcp \
+  --header "Authorization=Bearer {{secret:MY_TOKEN}}"
+```
+
+Note the limitation: ant-bot sends **static** credentials. A server that requires an interactive
+OAuth sign-in — most first-party Google and Microsoft endpoints — cannot be used this way, because
+there is nowhere to complete the sign-in and the resulting token expires anyway. Prefer a server
+that accepts a long-lived token or API key.
+
+Other statuses you may see: `failed to start` (wrong command or URL — `connector test` will show
+the same), and `did not finish connecting in time`.
 
 ### What a connector can do
 

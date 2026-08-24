@@ -404,6 +404,26 @@ export class BotManager {
         if (ev.sessionId) store.updateBot(bot.id, { sessionId: ev.sessionId });
         break;
 
+      // A connector that does not come up gives the bot no tools and no way to say why — it
+      // simply behaves as though the connector were never assigned. Surfacing the SDK's own
+      // verdict is the difference between "my bot ignores my connector" and a stated reason.
+      case 'mcp_status': {
+        const bad = (ev.mcpStatus ?? []).filter((m) => m.status !== 'connected');
+        if (!bad.length) break;
+        for (const m of bad) {
+          log.warn(`connector "${m.name}" did not connect for ${bot.slug}: ${m.status}${m.error ? ` — ${m.error}` : ''}`);
+        }
+        bus.publish({
+          type: 'notify',
+          botId: bot.id,
+          threadId: job.threadId,
+          title: 'Connector unavailable',
+          body: bad.map((m) => `${m.name}: ${describeMcpStatus(m.status)}`).join('; '),
+          level: 'warn',
+        });
+        break;
+      }
+
       case 'text':
         if (ev.text) {
           const cur = store.getMessage(msgId);
@@ -459,6 +479,22 @@ export class BotManager {
       default:
         break;
     }
+  }
+}
+
+/** Plain-language reason a connector is not usable this turn. */
+export function describeMcpStatus(status: string): string {
+  switch (status) {
+    case 'needs-auth':
+      return 'needs authentication — the server rejected the credentials it was given (or was given none)';
+    case 'failed':
+      return 'failed to start — check the command or URL with `antbot connector test`';
+    case 'pending':
+      return 'did not finish connecting in time';
+    case 'disabled':
+      return 'is disabled';
+    default:
+      return status;
   }
 }
 

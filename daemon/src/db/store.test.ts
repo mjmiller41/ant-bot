@@ -556,3 +556,62 @@ describe('connectors', () => {
     expect(s.listBotConnectors(copy.id).map((x) => x.name)).toEqual(['gh']);
   });
 });
+
+describe('resetBotSession', () => {
+  const freshStore = (): Store => new Store(openDb(':memory:'));
+
+  it('clears the thread messages and the SDK session', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout' });
+    s.updateBot(bot.id, { sessionId: 'sess-abc' });
+    s.createMessage({ threadId: bot.threadId!, authorKind: 'user', contentMd: 'hi' });
+    s.createMessage({ threadId: bot.threadId!, authorKind: 'bot', authorBotId: bot.id, contentMd: 'hello' });
+
+    expect(s.resetBotSession(bot.id)).toEqual({ messagesDeleted: 2 });
+    expect(s.listMessages(bot.threadId!)).toEqual([]);
+    expect(s.getBot(bot.id)!.sessionId).toBeNull();
+  });
+
+  // What survives is the point: these are what make the bot itself, as opposed to its history.
+  it('keeps the description, skills, connectors and routines', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout', description: 'durable rules' });
+    const skill = s.createSkill({ slug: 'sk', name: 'Sk', path: '/p' });
+    const conn = s.createConnector({ name: 'gh', config: { transport: 'stdio', command: 'x', args: [], env: {} } });
+    s.setBotSkills(bot.id, [skill.id]);
+    s.setBotConnectors(bot.id, [conn.id]);
+    s.createRoutine({ botId: bot.id, name: 'daily', cronExpr: '0 9 * * *', instructionMd: 'go' });
+
+    s.resetBotSession(bot.id);
+
+    expect(s.getBot(bot.id)!.description).toBe('durable rules');
+    expect(s.listBotSkills(bot.id).map((x) => x.slug)).toEqual(['sk']);
+    expect(s.listBotConnectors(bot.id).map((x) => x.name)).toEqual(['gh']);
+    expect(s.listRoutines(bot.id)).toHaveLength(1);
+  });
+
+  // The thread row itself must survive: bot.threadId and every message that follows point at it.
+  it('keeps the thread rather than deleting it', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout' });
+    s.resetBotSession(bot.id);
+    expect(s.getThread(bot.threadId!)).not.toBeNull();
+    expect(s.getBot(bot.id)!.threadId).toBe(bot.threadId);
+  });
+
+  it('leaves another bot untouched', () => {
+    const s = freshStore();
+    const a = s.createBot({ name: 'A' });
+    const b2 = s.createBot({ name: 'B' });
+    s.createMessage({ threadId: b2.threadId!, authorKind: 'user', contentMd: 'keep me' });
+    s.resetBotSession(a.id);
+    expect(s.listMessages(b2.threadId!)).toHaveLength(1);
+  });
+
+  it('is idempotent and returns null for a bot that does not exist', () => {
+    const s = freshStore();
+    const bot = s.createBot({ name: 'Scout' });
+    expect(s.resetBotSession(bot.id)).toEqual({ messagesDeleted: 0 });
+    expect(s.resetBotSession('nope')).toBeNull();
+  });
+});

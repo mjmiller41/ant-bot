@@ -97,6 +97,9 @@ export const api = {
       set: (id: string, connectorIds: string[]) =>
         request<{ ok: true }>(`/bots/${id}/connectors`, { method: 'PUT', ...json({ connectorIds }) }),
     },
+    /** Clear the conversation and SDK session; keeps memory, skills, connectors and routines. */
+    reset: (id: string) =>
+      request<{ ok: true; messagesDeleted: number }>(`/bots/${id}/reset`, { method: 'POST' }),
     stop: (id: string) => request<{ stopped: boolean }>(`/bots/${id}/stop`, { method: 'POST' }),
   },
 

@@ -71,6 +71,24 @@ export function registerCoreRoutes(f: FastifyInstance, app: App): void {
     return { ok: true };
   });
 
+  /**
+   * Start a fresh conversation: clears the thread and the SDK session, keeps the bot.
+   *
+   * Refused while the bot is working — resetting the session mid-turn would leave the running
+   * turn writing into a message that no longer exists.
+   */
+  f.post<{ Params: { id: string } }>('/api/bots/:id/reset', async (req, reply) => {
+    const bot = store.getBot(req.params.id);
+    if (!bot) return reply.code(404).send({ error: 'No such bot' });
+    if (bot.state === 'running' || bot.state === 'queued') {
+      return reply.code(409).send({ error: 'This bot is working. Stop it first, then start fresh.' });
+    }
+    const result = store.resetBotSession(bot.id);
+    if (!result) return reply.code(404).send({ error: 'No such bot' });
+    if (bot.threadId) bus.publish({ type: 'thread.updated', threadId: bot.threadId, botId: bot.id, threadId2: bot.threadId });
+    return { ok: true, ...result };
+  });
+
   f.post<{ Params: { id: string } }>('/api/bots/:id/duplicate', async (req, reply) => {
     try {
       const copy = store.duplicateBot(req.params.id);

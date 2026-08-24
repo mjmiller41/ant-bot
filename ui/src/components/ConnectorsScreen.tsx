@@ -257,6 +257,7 @@ function ConnectorRow({ connector, onChanged }: { connector: ApiConnector; onCha
           {probe.ok ? (
             <>
               <p className="text-(--color-green)">Connected — {probe.tools.length} tool(s)</p>
+              {probe.authHint && <p className="mt-1 text-(--color-amber)">{probe.authHint}</p>}
               <ul className="mt-1 space-y-0.5">
                 {probe.tools.map((t) => (
                   <li key={t.name} className="truncate" title={t.description}>

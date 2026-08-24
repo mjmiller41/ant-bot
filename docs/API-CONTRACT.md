@@ -13,6 +13,7 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 | GET | `/api/bots/:id` | – | `Bot` |
 | PATCH | `/api/bots/:id` | `UpdateBotRequest` | `Bot` |
 | DELETE | `/api/bots/:id` | – | `{ ok: true }` |
+| POST | `/api/bots/:id/reset` | – | `{ ok: true, messagesDeleted: number }`; 409 while the bot is running |
 | POST | `/api/bots/:id/duplicate` | – | `Bot` |
 | GET | `/api/bots/:id/memory` | – | `{ name, content }[]` |
 | PUT | `/api/bots/:id/memory` | `{ name, content }` | `{ ok: true }` |
@@ -61,7 +62,7 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 | POST | `/api/connectors` | `CreateConnectorRequest` | `Connector`; 409 if the name is taken |
 | PATCH | `/api/connectors/:id` | `UpdateConnectorRequest` | `Connector` (no rename — see below) |
 | DELETE | `/api/connectors/:id` | – | `{ ok: true }`; also drops every bot's assignment |
-| POST | `/api/connectors/:id/test` | – | `ConnectorProbeResult` `{ok, tools[], error?}` |
+| POST | `/api/connectors/:id/test` | – | `ConnectorProbeResult` `{ok, tools[], error?, authHint?}` |
 | GET | `/api/bots/:id/connectors` | – | `Connector[]` assigned to this bot |
 | PUT | `/api/bots/:id/connectors` | `{ connectorIds: string[] }` | `{ ok: true }` |
 

@@ -25,6 +25,16 @@ export interface ProbeResult {
   ok: boolean;
   tools: ProbeTool[];
   error?: string;
+  /**
+   * Set when the server advertised tools but the mount is still likely to be refused.
+   *
+   * Listing tools and being *allowed to call* them are different questions for many servers —
+   * a hosted API will happily describe its tools to anyone and reject the first real call. The
+   * SDK discovers that during its own handshake and reports `needs-auth`; the probe cannot,
+   * without invoking a tool and causing whatever that tool does. So it says so instead of
+   * reporting a clean success that a turn will contradict.
+   */
+  authHint?: string;
 }
 
 /** Tool descriptions can be enormous; a diagnostic listing does not need all of it. */
@@ -204,7 +214,15 @@ export async function probeConnector(
       return await probeStdio(config as { command: string; args?: string[]; env?: Record<string, string> }, timeoutMs);
     }
     if (type === 'http') {
-      return await probeHttp(config as { url: string; headers?: Record<string, string> }, timeoutMs);
+      const result = await probeHttp(config as { url: string; headers?: Record<string, string> }, timeoutMs);
+      const headers = (config.headers ?? {}) as Record<string, string>;
+      const authed = Object.keys(headers).some((h) => /^(authorization|x-api-key|api-key)$/i.test(h));
+      if (result.ok && !authed) {
+        result.authHint =
+          'This server was reached without any credential. If it needs one, the tools will list here but ' +
+          'a bot will still see none — add an Authorization header, e.g. {{secret:NAME}}.';
+      }
+      return result;
     }
     // SSE needs a persistent event stream and a separate POST endpoint the server advertises at
     // runtime — more client than a diagnostic justifies. Assign it and run a turn instead.

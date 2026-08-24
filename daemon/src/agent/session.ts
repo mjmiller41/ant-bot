@@ -4,8 +4,15 @@ import { logger } from '../util/log.js';
 
 const log = logger('agent');
 
+/** Connection state the SDK reports for one mounted MCP server at turn start. */
+export interface McpStatus {
+  name: string;
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
+  error?: string;
+}
+
 export interface TurnEvent {
-  kind: 'text' | 'tool_start' | 'tool_result' | 'session' | 'done' | 'error' | 'status';
+  kind: 'text' | 'tool_start' | 'tool_result' | 'session' | 'done' | 'error' | 'status' | 'mcp_status';
   text?: string;
   toolName?: string;
   toolInput?: unknown;
@@ -15,6 +22,8 @@ export interface TurnEvent {
   sessionId?: string;
   usage?: { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; costUsd: number };
   message?: string;
+  /** Present on `mcp_status`: every server the SDK tried to mount for this turn. */
+  mcpStatus?: McpStatus[];
 }
 
 export interface TurnRequest {
@@ -111,6 +120,12 @@ export async function* runTurn(req: TurnRequest): AsyncGenerator<TurnEvent> {
       switch (m.type) {
         case 'system':
           if (m.subtype === 'init' && m.session_id) yield { kind: 'session', sessionId: m.session_id };
+          // The init message is the only place the SDK reports whether a mounted MCP server
+          // actually came up. Dropping it is how a connector that needs auth, or failed to
+          // start, becomes a bot that silently has no such tools and cannot say why.
+          if (m.subtype === 'init' && Array.isArray(m.mcp_servers)) {
+            yield { kind: 'mcp_status', mcpStatus: m.mcp_servers as McpStatus[] };
+          }
           break;
 
         case 'stream_event': {

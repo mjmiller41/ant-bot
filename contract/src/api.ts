@@ -99,11 +99,19 @@ export type UpdateConnectorRequest = z.infer<typeof UpdateConnectorRequest>;
  */
 export type ApiConnector = Connector & { missingSecrets: string[] };
 
-/** What `POST /api/connectors/:id/test` reports. Tool names and descriptions only — never config. */
+/**
+ * What `POST /api/connectors/:id/test` reports. Tool names and descriptions only — never config.
+ *
+ * `ok` means the server answered and advertised tools. It does **not** mean a bot can use them:
+ * many servers list their tools to anyone and only demand credentials on the first real call, so
+ * authentication is verified at mount time, not here. `authHint` carries that caveat when the
+ * probe has reason to suspect it.
+ */
 export interface ConnectorProbeResult {
   ok: boolean;
   tools: { name: string; description: string }[];
   error?: string;
+  authHint?: string;
 }
 
 /**

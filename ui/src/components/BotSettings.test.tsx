@@ -11,12 +11,14 @@ const listRoutines = vi.fn();
 const listConnectors = vi.fn();
 const getBotConnectors = vi.fn();
 const setBotConnectors = vi.fn();
+const resetBot = vi.fn();
 
 // The connectors panel renders alongside every other panel, so every test in this file calls
 // these. Defaults survive vi.clearAllMocks(), which clears calls but not implementations.
 listConnectors.mockResolvedValue([]);
 getBotConnectors.mockResolvedValue([]);
 setBotConnectors.mockResolvedValue({ ok: true });
+resetBot.mockResolvedValue({ ok: true, messagesDeleted: 3 });
 
 vi.mock('../api/client.js', () => ({
   ApiError: class ApiError extends Error {},
@@ -27,6 +29,7 @@ vi.mock('../api/client.js', () => ({
       connectors: { get: (id: string) => getBotConnectors(id), set: (id: string, ids: string[]) => setBotConnectors(id, ids) },
       memory: { list: () => listMemory() },
       update: vi.fn(),
+      reset: (id: string) => resetBot(id),
     },
     routines: { list: () => listRoutines() },
     connectors: { list: () => listConnectors() },
@@ -206,6 +209,7 @@ describe('BotSettings — connectors panel', () => {
     listConnectors.mockResolvedValue(CONNECTORS);
     getBotConnectors.mockResolvedValue([]);
     setBotConnectors.mockResolvedValue({ ok: true });
+resetBot.mockResolvedValue({ ok: true, messagesDeleted: 3 });
   });
 
   const renderPanel = () =>
@@ -246,5 +250,66 @@ describe('BotSettings — connectors panel', () => {
     listConnectors.mockResolvedValue([]);
     renderPanel();
     expect(await screen.findByText(/No connectors yet/)).toBeInTheDocument();
+  });
+});
+
+describe('BotSettings — Start fresh', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listSkills.mockResolvedValue([]);
+    listMemory.mockResolvedValue([]);
+    listRoutines.mockResolvedValue([]);
+    resetBot.mockResolvedValue({ ok: true, messagesDeleted: 3 });
+  });
+
+  const renderPanel = (onUpdated = vi.fn()) =>
+    render(<BotSettings bot={makeBot()} onClose={vi.fn()} onUpdated={onUpdated} onDuplicated={vi.fn()} onDeleted={vi.fn()} />);
+
+  // Clearing a conversation is not undoable, so it asks first — like Delete does.
+  it('confirms before clearing anything', async () => {
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Start fresh' }));
+    expect(await screen.findByText(/Clear this conversation/)).toBeInTheDocument();
+    expect(resetBot).not.toHaveBeenCalled();
+  });
+
+  // The confirmation is where someone decides whether this is safe, so it has to be accurate
+  // about what survives.
+  it('says what it keeps', async () => {
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Start fresh' }));
+    const note = await screen.findByText(/Keeps the Bot/);
+    for (const kept of ['memory', 'skills', 'connectors', 'routines']) {
+      expect(note.textContent).toContain(kept);
+    }
+  });
+
+  it('resets on confirm and tells the parent to refresh', async () => {
+    const onUpdated = vi.fn();
+    renderPanel(onUpdated);
+    fireEvent.click(await screen.findByRole('button', { name: 'Start fresh' }));
+    const buttons = await screen.findAllByRole('button', { name: 'Start fresh' });
+    fireEvent.click(buttons[buttons.length - 1]!);
+    await waitFor(() => expect(resetBot).toHaveBeenCalledWith('bot-1'));
+    await waitFor(() => expect(onUpdated).toHaveBeenCalled());
+  });
+
+  it('cancels without touching anything', async () => {
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Start fresh' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText(/Clear this conversation/)).not.toBeInTheDocument());
+    expect(resetBot).not.toHaveBeenCalled();
+  });
+
+  // The daemon refuses mid-turn; the reason has to reach the person who clicked.
+  it('shows why the daemon refused', async () => {
+    const { ApiError } = await import('../api/client.js');
+    resetBot.mockRejectedValue(new ApiError('This bot is working. Stop it first, then start fresh.', 409));
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Start fresh' }));
+    const buttons = await screen.findAllByRole('button', { name: 'Start fresh' });
+    fireEvent.click(buttons[buttons.length - 1]!);
+    expect(await screen.findByText(/This bot is working/)).toBeInTheDocument();
   });
 });

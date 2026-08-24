@@ -19,6 +19,7 @@ interface ProbeResponse {
   ok: boolean;
   tools: { name: string; description: string }[];
   error?: string;
+  authHint?: string;
 }
 
 /** Collect a repeatable `--flag K=V` into a record. Later wins, so a typo can be corrected. */
@@ -213,6 +214,7 @@ export async function runConnectorCommand(argv: string[], port: number): Promise
         return 1;
       }
       console.log(green(`${name}: connected, ${result.tools.length} tool(s)`));
+      if (result.authHint) console.log(yellow(`  ${result.authHint}`));
       for (const t of result.tools) {
         console.log(`  ${bold(`mcp__${name}__${t.name}`)}`);
         if (t.description) console.log(`    ${dim(t.description)}`);

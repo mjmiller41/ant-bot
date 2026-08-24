@@ -150,6 +150,30 @@ export class Store {
     this.db.prepare(`DELETE FROM routines WHERE bot_id=?`).run(id);
     if (bot.threadId) this.db.prepare(`DELETE FROM threads WHERE id=?`).run(bot.threadId);
   }
+  /**
+   * Clear a bot's conversation and its SDK session, keeping everything that defines the bot.
+   *
+   * Deliberately narrow. Memory, skills, connectors, routines and the bot's files all survive —
+   * those are the bot. What goes is the accumulated conversation: the messages in its thread and
+   * the `session_id` the SDK resumes from, which is what makes a turn carry prior context.
+   *
+   * Messages are deleted rather than the thread, so the thread id every other row points at
+   * stays valid; the FTS triggers keep the search index in step.
+   */
+  resetBotSession(id: string): { messagesDeleted: number } | null {
+    const bot = this.getBot(id);
+    if (!bot) return null;
+    let messagesDeleted = 0;
+    if (bot.threadId) {
+      const info = this.db.prepare(`DELETE FROM messages WHERE thread_id=?`).run(bot.threadId);
+      messagesDeleted = info.changes;
+      this.db.prepare(`UPDATE threads SET last_read_at=0 WHERE id=?`).run(bot.threadId);
+    }
+    // Null, not a new id: the next turn starts a session instead of resuming a dead one.
+    this.db.prepare(`UPDATE bots SET session_id=NULL, attention='none' WHERE id=?`).run(id);
+    return { messagesDeleted };
+  }
+
   duplicateBot(id: string): Bot | null {
     const src = this.getBot(id);
     if (!src) return null;

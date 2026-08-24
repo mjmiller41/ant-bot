@@ -4,6 +4,27 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-08-24
+
+### Added
+
+- **Start fresh.** A Bot settings action that clears the conversation and the model's accumulated
+  context while keeping the Bot itself — description, memory, skills, connectors, routines and
+  files all survive. Previously the only way to get a clean slate was to duplicate the Bot and
+  delete the original, which also threw away its memory. Refuses while the Bot is working.
+
+### Fixed
+
+- **A connector that fails to start now says so.** The SDK reports each MCP server's status at the
+  start of every turn and ant-bot was discarding it, so a connector that needed authentication, or
+  failed outright, produced a Bot that simply behaved as though the connector were not assigned —
+  with nothing anywhere explaining why. Non-connected servers are now logged and reported in the
+  thread, in plain language.
+- **`connector test` no longer reports a misleading success.** Listing a server's tools and being
+  allowed to call them are different questions: a server can advertise its tools to anyone and
+  refuse the first real call. A successful test against an endpoint with no credential configured
+  now carries that caveat, in the UI and the CLI.
+
 ## [0.2.0] — 2026-08-23
 
 ### Added

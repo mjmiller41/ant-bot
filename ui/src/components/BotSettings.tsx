@@ -358,6 +358,8 @@ function SkillsEditor({ botId }: { botId: string }) {
 
 export function BotSettings({ bot, onClose, onUpdated, onDuplicated, onDeleted }: BotSettingsProps) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   async function togglePinned() {
     onUpdated(await api.bots.update(bot.id, { pinned: !bot.pinned }));
@@ -404,12 +406,55 @@ export function BotSettings({ bot, onClose, onUpdated, onDuplicated, onDeleted }
         </button>
         <button
           type="button"
+          onClick={() => setResetConfirm(true)}
+          className="rounded border border-(--color-border) px-3 py-1.5 text-xs hover:bg-(--color-bg-hover)"
+        >
+          Start fresh
+        </button>
+        <button
+          type="button"
           onClick={() => setDeleteConfirm(true)}
           className="rounded border border-(--color-red)/50 px-3 py-1.5 text-xs text-(--color-red) hover:bg-(--color-red)/10"
         >
           Delete
         </button>
       </section>
+
+      {resetConfirm && (
+        <div className="mb-6 rounded border border-(--color-border) bg-(--color-bg-elevated) p-3 text-sm">
+          <p className="mb-1">Clear this conversation and start a fresh session?</p>
+          <p className="mb-2 text-xs text-(--color-text-muted)">
+            Deletes the messages in this thread and drops the model&rsquo;s accumulated context. Keeps the Bot&rsquo;s
+            description, memory, skills, connectors, routines and files.
+          </p>
+          {resetError && <p className="mb-2 text-xs text-(--color-red)">{resetError}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                setResetError(null);
+                try {
+                  await api.bots.reset(bot.id);
+                  setResetConfirm(false);
+                  onUpdated(bot);
+                } catch (err) {
+                  setResetError(err instanceof ApiError ? err.message : 'Could not start fresh');
+                }
+              }}
+              className="rounded bg-(--color-accent) px-3 py-1.5 text-xs font-medium text-(--color-accent-fg)"
+            >
+              Start fresh
+            </button>
+            <button
+              type="button"
+              onClick={() => { setResetConfirm(false); setResetError(null); }}
+              className="rounded border border-(--color-border) px-3 py-1.5 text-xs"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {deleteConfirm && (
         <div className="mb-6 rounded border border-(--color-red)/50 bg-(--color-red)/10 p-3 text-sm">
