@@ -58,14 +58,17 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 | GET | `/api/computer/status` | – | `{ available: boolean, mode, pages: {botId,url,title}[] }` |
 | POST | `/api/computer/takeover` | `{ botId }` | `{ ok: boolean, message: string }` |
 | DELETE | `/api/computer/takeover` | `{ botId }` | `{ ok: true }` |
-| GET | `/api/connectors` | – | `ApiConnector[]` (`Connector` + `missingSecrets`, `signedIn`) |
-| POST | `/api/connectors` | `CreateConnectorRequest` | `Connector`; 409 if the name is taken |
+| GET | `/api/connectors` | – | `ApiConnector[]` (`Connector` + `missingSecrets`, `signedIn`; rows carry `kind`, `lastStatus`, `lastError`, `checkedAt`) |
+| GET | `/api/connectors/catalog` | – | `ApiCatalogEntry[]` — the built-ins ant-bot ships, with their guided setup steps |
+| POST | `/api/connectors` | `CreateConnectorRequest` (`config` **or** `builtin`, optional `botIds`) | `ApiConnector & { check: ConnectorCheck }`; 409 if the name is taken |
 | PATCH | `/api/connectors/:id` | `UpdateConnectorRequest` | `Connector` (no rename — see below) |
 | DELETE | `/api/connectors/:id` | – | `{ ok: true }`; also drops every bot's assignment |
 | POST | `/api/connectors/:id/login` | `{clientId?, clientSecret?, scopes?}` | `{ authorizeUrl }` |
 | DELETE | `/api/connectors/:id/login` | – | `{ ok: true }` (forget a stored sign-in) |
 | GET | `/api/connectors/oauth/callback` | – | HTML — where the provider returns the human |
-| POST | `/api/connectors/:id/test` | – | `ConnectorProbeResult` `{ok, tools[], error?, authHint?}` |
+| POST | `/api/connectors/:id/check` | – | `ConnectorCheck` `{status: ready \| needs-sign-in \| needs-credential \| unreachable, selfRegistration?, provider?, tools[], detail?}`; persisted to the row |
+| POST | `/mcp/:name` | JSON-RPC (MCP streamable HTTP) | A built-in connector's MCP endpoint. 401 without the per-boot bearer; 202 for a notification |
+| DELETE | `/mcp/:name` | – | 204 (session end; stateless, so a no-op) |
 | GET | `/api/bots/:id/connectors` | – | `Connector[]` assigned to this bot |
 | PUT | `/api/bots/:id/connectors` | `{ connectorIds: string[] }` | `{ ok: true }` |
 
@@ -111,9 +114,18 @@ any other tool.
 - **No rename.** `PATCH` cannot change a name: the name is part of every tool name a rule may
   already match, so renaming would silently orphan those rules. Delete and re-add.
 - **Secrets are references, never values.** An env value or header may contain `{{secret:NAME}}`;
-  the daemon substitutes it from the keychain when the server is mounted. Stored rows, every
-  response above, and `POST /:id/test` carry only the reference. `missingSecrets` lists references
-  with nothing behind them — such a connector is skipped at turn time rather than failing the turn.
+  the daemon substitutes it from the keychain when the server is mounted. Stored rows and every
+  response above carry only the reference. `missingSecrets` lists references with nothing behind
+  them — such a connector is skipped at turn time rather than failing the turn.
+- **Built-ins** (`kind: "builtin"`) are servers the daemon itself serves at `POST /mcp/<name>`,
+  listed by `GET /api/connectors/catalog`. Their config is not editable; a row is created with
+  `{ builtin: "<catalog name>" }` and the name must equal the catalog name. The endpoint is
+  guarded by a bearer that changes every boot and is known only to the daemon's own mount
+  config, so a bot's subprocess cannot reach another connector's tools by path.
+- **`check` is the verdict; `mcp_status` at turn start writes the same columns.** `lastStatus` on
+  a row is whichever came last.
+- **Mid-turn sign-in.** When a mounted server asks for a URL sign-in during a turn, the bot's
+  streaming message gets a `signin` card `{serverName, url}` via `message.card`. No new event type.
 
 ## Static
 

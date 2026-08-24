@@ -188,6 +188,9 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
 
   const port = opts.port ?? app.cfg.port;
   const host = opts.host ?? app.cfg.host;
+  // Everything that builds a URL back to this daemon — OAuth redirect, built-in MCP endpoints —
+  // reads the port from here, so a `--port` override has to land before the first request.
+  app.cfg.port = port;
   await fastify.listen({ port, host });
   const url = `http://${host}:${port}`;
 

@@ -72,12 +72,20 @@ export const CreateSkillRequest = z.object({
 });
 export type CreateSkillRequest = z.infer<typeof CreateSkillRequest>;
 
-export const CreateConnectorRequest = z.object({
-  name: ConnectorSchema.shape.name,
-  description: z.string().default(''),
-  config: ConnectorConfigSchema,
-  enabled: z.boolean().optional(),
-});
+/**
+ * Either a custom server (`config`) or a built-in one (`builtin`, a catalog name — the daemon
+ * fills in the config). `botIds` assigns it in the same call so adding is one step.
+ */
+export const CreateConnectorRequest = z
+  .object({
+    name: ConnectorSchema.shape.name,
+    description: z.string().default(''),
+    config: ConnectorConfigSchema.optional(),
+    builtin: z.string().optional(),
+    enabled: z.boolean().optional(),
+    botIds: z.array(z.string()).optional(),
+  })
+  .refine((v) => Boolean(v.config) !== Boolean(v.builtin), { message: 'Give either config or builtin, not both' });
 export type CreateConnectorRequest = z.infer<typeof CreateConnectorRequest>;
 
 /**
@@ -103,19 +111,25 @@ export type ApiConnector = Connector & {
   signedIn: boolean;
 };
 
+/** A catalog entry as the API describes it: what it is and what setting it up will involve. */
+export interface ApiCatalogEntry {
+  name: string;
+  displayName: string;
+  description: string;
+  provider: string;
+  /** Whether the provider needs a client ID/secret the user creates (Google) or self-registers. */
+  needsClientCredentials: boolean;
+  setupSteps: string[];
+}
+
 /**
- * What `POST /api/connectors/:id/test` reports. Tool names and descriptions only — never config.
- *
- * `ok` means the server answered and advertised tools. It does **not** mean a bot can use them:
- * many servers list their tools to anyone and only demand credentials on the first real call, so
- * authentication is verified at mount time, not here. `authHint` carries that caveat when the
- * probe has reason to suspect it.
+ * A raw probe: did the server answer, and what did it list. Tool names and descriptions only —
+ * never config. Reachable is not usable; `ConnectorCheck` is the verdict a person should read.
  */
 export interface ConnectorProbeResult {
   ok: boolean;
   tools: { name: string; description: string }[];
   error?: string;
-  authHint?: string;
 }
 
 /**

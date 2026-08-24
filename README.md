@@ -14,9 +14,9 @@ subscription login rather than a metered `ANTHROPIC_API_KEY`.
   and a memory directory that survives daemon restarts.
 - **A shared computer** — one workspace directory, one persistent browser profile, one terminal;
   every Bot can reach what every other Bot can reach.
-- **Connectors** — attach an MCP server (GitHub, filesystem, your own) once, then assign it per Bot.
-  A Bot without the assignment cannot see its tools; credentials stay in the keychain as
-  `{{secret:NAME}}` references.
+- **Connectors** — give Bots MCP tools in one step: a built-in ant-bot serves itself (Gmail), a
+  local command, or a URL. `antbot mcp add` checks it, signs in, and asks which Bots; credentials
+  go to the keychain and a Bot without the assignment cannot see the tools at all.
 - **Approvals** — every tool call a Bot proposes passes a Permission Gateway: deterministic rules,
   optional Haiku auto-review, or a human approval card in the thread.
 - **Skills** — standard Claude skills (`SKILL.md`), installed with `antbot skill add <source>` from
@@ -94,7 +94,8 @@ web assets. There's no separate frontend server to run.
 | `antbot restart` | Stop and start again |
 | `antbot status` | Whether it's running, on what port, with how many bots |
 | `antbot doctor` | Diagnose the environment; every failure prints its fix |
-| `antbot connector` | Manage the MCP servers your bots can use (`list`/`add`/`test`/`remove`) |
+| `antbot mcp add <name> [command \| url]` | Give bots an MCP server — built-in, local command, or URL — in one step (`list`/`check`/`login`/`remove` too) |
+| `antbot secret` | Credentials in your keychain, by name (`set`/`list`/`remove`) |
 | `antbot update` | Update to the latest published version (`--check` to look without installing) |
 
 Run `antbot --help` for the full list, or `antbot <command> --help` for one command.
@@ -280,10 +281,10 @@ Current totals, as run against this checkout:
 | Package | Test files | Tests |
 |---|---|---|
 | `@antbot/contract` | 1 | 34 |
-| `@antbot/daemon` | 25 | 575 |
-| `@antbot/ui` | 9 | 92 |
-| `@antbot/cli` | 8 | 140 |
-| **Total** | **43** | **841** |
+| `@antbot/daemon` | 29 | 609 |
+| `@antbot/ui` | 10 | 98 |
+| `@antbot/cli` | 8 | 141 |
+| **Total** | **48** | **882** |
 
 ## Status / not built
 

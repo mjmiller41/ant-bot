@@ -63,8 +63,12 @@ export class ConnectorAuthService {
 
   constructor(
     private readonly secrets: TokenStore,
-    private readonly port: number,
+    /** Read lazily: the listening port is settled after this service is built. */
+    private readonly portOf: () => number,
   ) {}
+  private get port(): number {
+    return this.portOf();
+  }
 
   /** Has this connector been signed in? Names only — never reads a value to answer. */
   isAuthorized(connectorName: string): boolean {
@@ -97,8 +101,8 @@ export class ConnectorAuthService {
     await this.secrets.remove(clientSecretName(connectorName));
   }
 
-  private async readClient(connectorName: string): Promise<ClientCredentials | null> {
-    const key = clientSecretName(connectorName);
+  private async readClient(clientKey: string): Promise<ClientCredentials | null> {
+    const key = clientSecretName(clientKey);
     const found = (await this.secrets.resolve([key])).get(key);
     if (!found) return null;
     try {
@@ -123,58 +127,101 @@ export class ConnectorAuthService {
       throw new OAuthError('Sign-in applies to http and sse connectors; a stdio server takes its credentials in env.');
     }
     const discovery = await discoverAuth(connector.config.url);
+    const authorizeUrl = await this.beginLoginWith(
+      {
+        connectorId: connector.id,
+        connectorName: connector.name,
+        clientKey: connector.name,
+        authorizationEndpoint: discovery.authServer.authorizationEndpoint,
+        tokenEndpoint: discovery.authServer.tokenEndpoint,
+        registrationEndpoint: discovery.authServer.registrationEndpoint,
+        resource: discovery.resource.resource,
+        scopes: opts.scopes?.length ? opts.scopes : discovery.resource.scopesSupported,
+        // Without these Google issues no refresh token, and the connector dies in an hour. Harmless
+        // for providers that ignore them.
+        extras: { access_type: 'offline', prompt: 'consent' },
+      },
+      opts,
+    );
+    return { authorizeUrl, discovery };
+  }
+
+  /**
+   * Begin a sign-in against a known authorization server. Used directly by built-in connectors,
+   * whose provider endpoints are fixed and whose client credentials are shared under one
+   * `clientKey` — one Google client serves Gmail, Calendar and Drive.
+   */
+  async beginLoginWith(
+    target: {
+      connectorId: string;
+      connectorName: string;
+      clientKey: string;
+      authorizationEndpoint: string;
+      tokenEndpoint: string;
+      registrationEndpoint?: string;
+      resource?: string;
+      scopes: string[];
+      extras?: Record<string, string>;
+      /** Shown when a client ID is needed and none is known. */
+      providerName?: string;
+    },
+    opts: { clientId?: string; clientSecret?: string } = {},
+  ): Promise<string> {
     const redirect = redirectUri(this.port);
 
     // Given now, else remembered from last time, else registered automatically. The remembered
     // path is what makes a retry after a failed exchange painless.
-    const remembered = await this.readClient(connector.name);
+    const remembered = await this.readClient(target.clientKey);
     let clientId = opts.clientId ?? remembered?.clientId;
     let clientSecret = opts.clientSecret ?? (opts.clientId ? undefined : remembered?.clientSecret);
-    if (!clientId && discovery.authServer.registrationEndpoint) {
-      const registered = await registerClient(discovery.authServer.registrationEndpoint, redirect);
+    if (!clientId && target.registrationEndpoint) {
+      const registered = await registerClient(target.registrationEndpoint, redirect);
       clientId = registered?.clientId;
       clientSecret = registered?.clientSecret;
     }
     if (!clientId) {
+      const who = target.providerName ?? new URL(target.authorizationEndpoint).host;
       throw new OAuthError(
-        `${new URL(discovery.authServer.authorizationEndpoint).host} does not support automatic app registration, ` +
-          'so it needs a client ID you create yourself. Register one with that provider, add ' +
-          `"${redirect}" as an authorised redirect URI, and pass the client ID with --client-id.`,
+        `${who} does not support automatic app registration, so it needs a client ID you create yourself. ` +
+          `Register one with that provider, add "${redirect}" as an authorised redirect URI, and pass the client ID with --client-id.`,
       );
     }
 
     // Remember before sending the human to the provider, so a failed exchange does not lose them.
     if (opts.clientId || opts.clientSecret || !remembered) {
-      await this.secrets.set(clientSecretName(connector.name), JSON.stringify({ clientId, clientSecret }));
+      await this.secrets.set(clientSecretName(target.clientKey), JSON.stringify({ clientId, clientSecret }));
     }
 
     const pkce = createPkce();
     const state = crypto.randomBytes(16).toString('base64url');
     this.pending.set(state, {
-      connectorId: connector.id,
-      connectorName: connector.name,
+      connectorId: target.connectorId,
+      connectorName: target.connectorName,
       verifier: pkce.verifier,
       clientId,
       clientSecret,
-      tokenEndpoint: discovery.authServer.tokenEndpoint,
-      resource: discovery.resource.resource,
+      tokenEndpoint: target.tokenEndpoint,
+      resource: target.resource,
       redirectUri: redirect,
       startedAt: Date.now(),
     });
     this.sweep();
 
-    const authorizeUrl = buildAuthorizeUrl({
-      authorizationEndpoint: discovery.authServer.authorizationEndpoint,
+    return buildAuthorizeUrl({
+      authorizationEndpoint: target.authorizationEndpoint,
       clientId,
       redirectUri: redirect,
-      scopes: opts.scopes?.length ? opts.scopes : discovery.resource.scopesSupported,
+      scopes: target.scopes,
       state,
       challenge: pkce.challenge,
-      resource: discovery.resource.resource,
-      // Without these Google issues no refresh token, and the connector dies in an hour.
-      extra: { access_type: 'offline', prompt: 'consent' },
+      resource: target.resource,
+      extra: target.extras,
     });
-    return { authorizeUrl, discovery };
+  }
+
+  /** Whether client credentials are on file for a key (a connector name or a provider key). */
+  hasClient(clientKey: string): boolean {
+    return this.secrets.list().includes(clientSecretName(clientKey));
   }
 
   /** Finish a sign-in from the redirect. Returns the connector that was authorised. */

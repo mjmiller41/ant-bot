@@ -235,7 +235,7 @@ describe('migration 2 — connectors', () => {
 
   it('creates both connector tables on a fresh database', () => {
     const db = new Database(':memory:');
-    expect(migrate(db).to).toBe(2);
+    expect(migrate(db).to).toBe(MIGRATIONS[MIGRATIONS.length - 1]!.version);
     expect(tables(db)).toEqual(expect.arrayContaining(['connectors', 'bot_connectors']));
   });
 
@@ -248,7 +248,7 @@ describe('migration 2 — connectors', () => {
 
     const result = migrate(db);
     expect(result.from).toBe(BASELINE_VERSION);
-    expect(result.applied.map((a) => a.name)).toEqual(['connectors']);
+    expect(result.applied.map((a) => a.name)[0]).toBe('connectors');
     expect(tables(db)).toEqual(expect.arrayContaining(['connectors', 'bot_connectors']));
     expect(db.prepare(`SELECT COUNT(*) c FROM bots`).get()).toEqual({ c: 1 });
   });
@@ -257,7 +257,7 @@ describe('migration 2 — connectors', () => {
     const db = new Database(':memory:');
     migrate(db);
     expect(migrate(db).applied).toEqual([]);
-    expect(db.prepare(`SELECT COUNT(*) c FROM schema_version`).get()).toEqual({ c: 2 });
+    expect(db.prepare(`SELECT COUNT(*) c FROM schema_version`).get()).toEqual({ c: MIGRATIONS.length });
   });
 
   it('enforces unique connector names at the schema level', () => {
@@ -266,6 +266,28 @@ describe('migration 2 — connectors', () => {
     const ins = db.prepare(`INSERT INTO connectors (id,name,config_json,created_at) VALUES (?,?,'{}',0)`);
     ins.run('c1', 'gh');
     expect(() => ins.run('c2', 'gh')).toThrow();
+  });
+});
+
+describe('migration 3 — connector kind and health', () => {
+  const cols = (db: Database.Database): string[] =>
+    (db.prepare(`PRAGMA table_info(connectors)`).all() as { name: string }[]).map((c) => c.name);
+
+  it('adds the columns on a fresh database', () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    expect(cols(db)).toEqual(expect.arrayContaining(['kind', 'last_status', 'last_error', 'checked_at']));
+  });
+
+  // A 0.2.x/0.3.x database has connector rows already; they must come through as custom, unchecked.
+  it('upgrades an existing connectors table and defaults old rows to custom', () => {
+    const db = new Database(':memory:');
+    migrate(db, { migrations: MIGRATIONS.filter((m) => m.version <= 2) });
+    db.prepare(`INSERT INTO connectors (id,name,config_json,created_at) VALUES ('c1','gh','{}',0)`).run();
+    const r = migrate(db);
+    expect(r.applied.map((a) => a.name)).toEqual(['connector-kind-and-health']);
+    const row = db.prepare(`SELECT kind, last_status FROM connectors WHERE id='c1'`).get() as { kind: string; last_status: string | null };
+    expect(row).toEqual({ kind: 'custom', last_status: null });
   });
 });
 

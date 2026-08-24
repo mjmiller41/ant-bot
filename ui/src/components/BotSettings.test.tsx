@@ -238,12 +238,14 @@ resetBot.mockResolvedValue({ ok: true, messagesDeleted: 3 });
     expect(boxes[1]).not.toBeChecked();
   });
 
-  it('saves the ids that are ticked', async () => {
+  // No Save button: a toggle is the save. Nothing to forget, nothing "unsaved".
+  it('saves on every toggle', async () => {
     renderPanel();
     const boxes = await screen.findAllByRole('checkbox');
+    await waitFor(() => expect(boxes[1]).toBeEnabled());
     fireEvent.click(boxes[1]!);
-    fireEvent.click(screen.getByRole('button', { name: 'Save connectors' }));
     await waitFor(() => expect(setBotConnectors).toHaveBeenCalledWith('bot-1', ['c2']));
+    expect(screen.queryByRole('button', { name: 'Save connectors' })).not.toBeInTheDocument();
   });
 
   it('points at the Connectors screen when there are none', async () => {

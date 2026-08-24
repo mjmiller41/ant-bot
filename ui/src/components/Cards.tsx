@@ -113,6 +113,20 @@ function ErrorCard({ card }: { card: Extract<Card, { type: 'error' }> }) {
   );
 }
 
+function SignInCard({ card }: { card: Extract<Card, { type: 'signin' }> }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-(--color-amber)/40 bg-(--color-amber)/10 p-2.5 text-sm">
+      <span className="flex-1">
+        <span className="font-medium">{card.serverName}</span> needs you to sign in before its tools work.
+      </span>
+      {/* A new tab: the provider returns to the daemon's callback, and this thread stays put. */}
+      <a href={card.url} target="_blank" rel="noopener noreferrer" className="rounded border border-(--color-border) px-2 py-1 text-xs">
+        Open
+      </a>
+    </div>
+  );
+}
+
 export function CardView({ card }: { card: Card }) {
   switch (card.type) {
     case 'tool':
@@ -125,6 +139,8 @@ export function CardView({ card }: { card: Card }) {
       return <HandoffCard card={card} />;
     case 'error':
       return <ErrorCard card={card} />;
+    case 'signin':
+      return <SignInCard card={card} />;
     default: {
       const _exhaustive: never = card;
       void _exhaustive;

@@ -615,3 +615,29 @@ describe('resetBotSession', () => {
     expect(s.resetBotSession('nope')).toBeNull();
   });
 });
+
+describe('connector kind and status', () => {
+  const freshStore = (): Store => new Store(openDb(':memory:'));
+  const cfg = { transport: 'stdio' as const, command: 'x', args: [], env: {} };
+
+  it('defaults to custom and no verdict', () => {
+    const s = freshStore();
+    const c = s.createConnector({ name: 'a', config: cfg });
+    expect(c).toMatchObject({ kind: 'custom', lastStatus: null, lastError: null, checkedAt: null });
+  });
+
+  it('stores a builtin kind', () => {
+    const s = freshStore();
+    expect(s.createConnector({ name: 'gmail', config: cfg, kind: 'builtin' }).kind).toBe('builtin');
+  });
+
+  it('records a verdict by id and by name', () => {
+    const s = freshStore();
+    const c = s.createConnector({ name: 'a', config: cfg });
+    s.setConnectorStatus(c.id, 'needs-sign-in', 'no token');
+    expect(s.getConnector(c.id)).toMatchObject({ lastStatus: 'needs-sign-in', lastError: 'no token' });
+    expect(s.getConnector(c.id)!.checkedAt).toBeGreaterThan(0);
+    s.setConnectorStatusByName('a', 'connected');
+    expect(s.getConnector(c.id)).toMatchObject({ lastStatus: 'connected', lastError: null });
+  });
+});

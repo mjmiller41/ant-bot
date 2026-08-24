@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Store } from '../db/store.js';
 import type { EventBus } from '../util/bus.js';
 import type { PermissionGateway } from '../permissions/gateway.js';
+import type { MountedConnector } from '../agent/runtime.js';
 import { runTurn, type TurnEvent } from '../agent/session.js';
 import { buildSystemPrompt } from './prompt.js';
 import { ensureMemoryDir } from '../memory/memory.js';
@@ -54,7 +55,7 @@ export interface ManagerDeps {
    * about, so a connector skipped for a missing credential simply is not there this turn.
    */
   connectorServers?: (botId: string) => Promise<{
-    servers: Record<string, unknown>;
+    servers: Record<string, MountedConnector>;
     mounted: { name: string; description: string }[];
   }>;
 }
@@ -315,9 +316,7 @@ export class BotManager {
     const mcpServers: Record<string, any> = { antbot: this.buildToolServer(bot, job.threadId, job.hops) };
     const browser = this.deps.browserTools?.(bot.id);
     if (browser) mcpServers.browser = browser;
-    // Connector names are validated against RESERVED_CONNECTOR_NAMES, so this cannot clobber
-    // `antbot` or `browser` above.
-    if (connectors) Object.assign(mcpServers, connectors.servers);
+
 
     try {
       for await (const ev of runTurn({
@@ -329,6 +328,9 @@ export class BotManager {
         settings,
         abortController: abort,
         mcpServers,
+        // Names are validated against RESERVED_CONNECTOR_NAMES, so these cannot clobber the two
+        // in-process servers above. Mounted by the runtime adapter, not here.
+        connectors: connectors?.servers ?? {},
         skillPluginPath: this.deps.skillPluginPath?.(),
         // Skill names come from SKILL.md frontmatter, which is what the SDK matches on.
         enabledSkills: botSkills.map((s) => s.name),
@@ -408,6 +410,12 @@ export class BotManager {
       // simply behaves as though the connector were never assigned. Surfacing the SDK's own
       // verdict is the difference between "my bot ignores my connector" and a stated reason.
       case 'mcp_status': {
+        // Persist every connector's verdict on its row — the Connectors screen shows state, and a
+        // toast is gone in seconds. The two in-process servers are not rows.
+        for (const m of ev.mcpStatus ?? []) {
+          if (m.name === 'antbot' || m.name === 'browser') continue;
+          store.setConnectorStatusByName(m.name, m.status, m.error ?? null);
+        }
         const bad = (ev.mcpStatus ?? []).filter((m) => m.status !== 'connected');
         if (!bad.length) break;
         for (const m of bad) {
@@ -421,6 +429,17 @@ export class BotManager {
           body: bad.map((m) => `${m.name}: ${describeMcpStatus(m.status)}`).join('; '),
           level: 'warn',
         });
+        break;
+      }
+
+      // Mid-turn sign-in: the link goes into the thread as a card, where the human is looking,
+      // and it persists — a toast would be gone before they came back from the browser.
+      case 'signin': {
+        if (!ev.signin) break;
+        const card: Card = { type: 'signin', serverName: ev.signin.serverName, url: ev.signin.url };
+        const idx = store.appendCard(msgId, card);
+        bus.publish({ type: 'message.card', threadId: job.threadId, botId: bot.id, messageId: msgId, card, cardIndex: idx });
+        store.setConnectorStatusByName(ev.signin.serverName, 'needs-sign-in', null);
         break;
       }
 
@@ -488,7 +507,7 @@ export function describeMcpStatus(status: string): string {
     case 'needs-auth':
       return 'needs authentication — the server rejected the credentials it was given (or was given none)';
     case 'failed':
-      return 'failed to start — check the command or URL with `antbot connector test`';
+      return 'failed to start — run `antbot mcp check <name>` to see why';
     case 'pending':
       return 'did not finish connecting in time';
     case 'disabled':

@@ -4,6 +4,54 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-08-24
+
+Connectors, redesigned. Getting an MCP server usable by a Bot took up to eleven steps and eight
+concepts; it is now one command, and ant-bot depends on nothing outside itself for any of it.
+
+### Added
+
+- **Built-in connectors.** `antbot mcp add gmail` gives a Bot mail — `search_threads`,
+  `get_thread`, `get_message`, `list_labels`, `create_draft`, `send_message` — served by the daemon
+  itself over Gmail's REST API with a token from ant-bot's own sign-in. Google's MCP endpoint
+  accepts only allowlisted clients, so ant-bot brings its own server rather than a dependency on
+  Google's, or on the `claude` CLI's, or on claude.ai. The one-time Google client setup is guided
+  in the CLI and the UI, with the redirect URI filled in. `send_message` and `create_draft` ship
+  with a `require` rule, so a Bot always asks before mail leaves your account.
+- **One-step add.** `antbot mcp add <name> [command | url]` infers the transport, takes a
+  credential once (`--env TOKEN` prompts with echo off and stores it in the keychain), checks the
+  server, signs in when it can — opening the browser — and asks which Bots get it (`--bots`).
+  The Connectors screen is one **Add** field with the name prefilled, credential rows with a
+  **secret** toggle, and Bot checkboxes. Nobody types `{{secret:…}}` any more.
+- **An honest check.** `antbot mcp check <name>` (and **Check** on the screen) gives one verdict —
+  `ready`, `needs sign-in`, `needs a credential`, `unreachable` — decided by whether a *call* would
+  be allowed, not by whether the server lists tools. It replaces `test`, whose green result many
+  servers contradicted on the first real call. The verdict is stored on the row and shown there.
+- **Mid-turn sign-in.** When a connector's token expires during a turn, the Bot's thread gets a
+  card with an **Open** button instead of a silently failing tool; the connector reconnects when
+  the sign-in finishes, without a restart.
+- **A place for secrets.** `antbot secret set|list|remove` and a **Secrets** section on Settings.
+  The API existed; nothing called it.
+- **The agent runtime seam.** `AgentRuntime` in `daemon/src/agent/runtime.ts` is where a Gemini or
+  Codex runtime plugs in: connectors reach it as a neutral `MountedConnector`, never as SDK config.
+
+### Changed
+
+- **Mounting is strict.** A turn mounts exactly what ant-bot passes — never `~/.claude.json`, a
+  plugin's `.mcp.json`, or claude.ai connectors — and every connector's tools are loaded up front
+  rather than deferred behind `ToolSearch`. A Bot's tools cannot change because of something
+  configured outside ant-bot.
+- **Assignment autosaves.** Ticking a connector in Bot settings is the save; the **Save
+  connectors** button is gone.
+- `antbot connector` remains as an alias of `antbot mcp`. `--scopes` on `add` is gone;
+  `--transport sse` remains for the rare SSE endpoint.
+- Migration 3 adds `kind`, `last_status`, `last_error`, `checked_at` to `connectors`. Existing
+  rows survive as `custom`.
+
+### Removed
+
+- `POST /api/connectors/:id/test` and `ConnectorProbeResult.authHint`, replaced by `/check`.
+
 ## [0.3.1] — 2026-08-24
 
 ### Fixed

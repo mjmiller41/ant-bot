@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Settings } from '@antbot/contract';
 import { api } from '../api/client.js';
+import { SecretsPanel } from './SecretsPanel.js';
 
 export interface SettingsScreenProps {
   onSettingsChange?: (settings: Settings) => void;
@@ -142,6 +143,9 @@ export function SettingsScreen({ onSettingsChange }: SettingsScreenProps) {
           <option value="container">Container</option>
         </select>
       </Field>
+
+      <h2 className="mt-8 mb-2 text-sm font-semibold">Secrets</h2>
+      <SecretsPanel />
     </div>
   );
 }

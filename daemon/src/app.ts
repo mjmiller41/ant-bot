@@ -7,8 +7,14 @@ import { PermissionGateway } from './permissions/gateway.js';
 import { seedBuiltinRules } from './permissions/rules.js';
 import { makeAutoReviewer, NullAutoReviewer } from './permissions/autoreview.js';
 import { BotManager } from './bots/manager.js';
-import { planConnectorMount, extractSecretRefs, buildMcpServerConfig } from './bots/connectors.js';
+import { planConnectorMount, extractSecretRefs, buildMcpServerConfig, computeMissingSecrets } from './bots/connectors.js';
 import { ConnectorAuthService } from './connectors/auth.js';
+import type { MountedConnector } from './agent/runtime.js';
+import { BuiltinService } from './connectors/builtin/service.js';
+import { gatherCustomSignals, decideCheck } from './connectors/check.js';
+import { readPackageVersion } from './util/locate.js';
+import { fileURLToPath } from 'node:url';
+import type { Connector, ConnectorCheck } from '@antbot/contract';
 import { loadConfig, type AntbotConfig } from './config/config.js';
 import { logger } from './util/log.js';
 import type { Settings } from '@antbot/contract';
@@ -49,6 +55,12 @@ export interface App {
   skills?: any;
   secrets?: SecretsService;
   connectorAuth?: ConnectorAuthService;
+  /** Serves ant-bot's built-in connectors (Gmail…) over MCP from the daemon itself. */
+  builtin?: BuiltinService;
+  /** One connector, resolved to what the runtime mounts — or null when it cannot be mounted. */
+  mountConnector: (connector: Connector) => Promise<MountedConnector | null>;
+  /** One honest verdict, persisted on the row. */
+  checkConnector: (connector: Connector) => Promise<ConnectorCheck>;
   lastUserActivity: { at: number };
   /** Root of the local plugin carrying installed skills. */
   skillPluginPath?: string;
@@ -82,6 +94,8 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
     manager: undefined as unknown as BotManager,
     lastUserActivity: { at: Date.now() },
     shutdown: async () => {},
+    mountConnector: async () => null,
+    checkConnector: async () => ({ status: 'unreachable', tools: [] }),
   };
 
   app.manager = new BotManager({
@@ -126,38 +140,81 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
      */
     connectorServers: async (botId: string) => {
       const assigned = store.listBotConnectors(botId);
-      if (!assigned.length) return { servers: {}, mounted: [] };
-
-      const available = new Set(app.secrets?.list() ?? []);
-      const { mount, skipped } = planConnectorMount(assigned, available);
-      for (const s of skipped) {
-        log.warn(`connector "${s.connector.name}" not mounted — missing secret(s): ${s.missing.join(', ')}`);
-      }
-
-      const servers: Record<string, unknown> = {};
+      const servers: Record<string, MountedConnector> = {};
       const mounted: { name: string; description: string }[] = [];
-      for (const connector of mount) {
-        const refs = extractSecretRefs(connector.config);
-        try {
-          const secrets = refs.length ? await app.secrets!.resolve(refs) : new Map<string, string | null>();
-          const built = buildMcpServerConfig(connector, secrets) as Record<string, unknown>;
-          // A signed-in connector carries a bearer token that is refreshed here if it is close to
-          // expiring. Static `{{secret:...}}` headers, if any, are already in `built` and win —
-          // an explicitly configured Authorization is the human being deliberate.
-          const auth = await app.connectorAuth?.authHeader(connector.name);
-          if (auth && built.headers && !('Authorization' in (built.headers as object))) {
-            built.headers = { ...(built.headers as Record<string, string>), ...auth };
-          }
-          servers[connector.name] = built;
-          mounted.push({ name: connector.name, description: connector.description });
-        } catch (err) {
-          // A secret that vanished between planning and reading. Same treatment as a missing one.
-          log.warn(`connector "${connector.name}" not mounted`, (err as Error).message);
-        }
+      for (const connector of assigned) {
+        const built = await app.mountConnector(connector);
+        if (!built) continue;
+        servers[connector.name] = built;
+        mounted.push({ name: connector.name, description: connector.description });
       }
       return { servers, mounted };
     },
   });
+
+  /**
+   * Resolve one connector to what the runtime mounts.
+   *
+   * This is the only place a secret value is read for a turn, and the values live nowhere but the
+   * returned config — not in the row, not in a log line, not in anything a route returns. A
+   * connector missing a credential is dropped rather than mounted broken or allowed to fail the
+   * turn; the row's status says why. A built-in connector mounts as the daemon's own endpoint with
+   * this boot's bearer; its provider token never leaves the daemon.
+   */
+  app.mountConnector = async (connector) => {
+    if (connector.kind === 'builtin') {
+      if (!app.builtin?.get(connector.name)) return null;
+      return app.builtin.mountConfig(connector);
+    }
+    const available = new Set(app.secrets?.list() ?? []);
+    const { skipped } = planConnectorMount([connector], available);
+    if (skipped.length) {
+      const missing = skipped[0]!.missing;
+      log.warn(`connector "${connector.name}" not mounted — missing secret(s): ${missing.join(', ')}`);
+      store.setConnectorStatus(connector.id, 'needs-credential', `missing secret(s): ${missing.join(', ')}`);
+      return null;
+    }
+    try {
+      const refs = extractSecretRefs(connector.config);
+      const secrets = refs.length ? await app.secrets!.resolve(refs) : new Map<string, string | null>();
+      const built = buildMcpServerConfig(connector, secrets);
+      // A signed-in connector carries a bearer token that is refreshed here if it is close to
+      // expiring. A static Authorization header in the config wins — that is the human being
+      // deliberate.
+      const auth = await app.connectorAuth?.authHeader(connector.name);
+      if (auth && built.type !== 'stdio' && !('Authorization' in built.headers)) {
+        built.headers = { ...built.headers, ...auth };
+      }
+      return built;
+    } catch (err) {
+      // A secret that vanished between planning and reading. Same treatment as a missing one.
+      log.warn(`connector "${connector.name}" not mounted`, (err as Error).message);
+      store.setConnectorStatus(connector.id, 'needs-credential', (err as Error).message);
+      return null;
+    }
+  };
+
+  app.checkConnector = async (connector) => {
+    let verdict: ConnectorCheck;
+    if (connector.kind === 'builtin') {
+      const def = app.builtin?.get(connector.name);
+      const tools = def ? def.tools().map((t) => ({ name: t.name, description: t.description })) : [];
+      verdict = decideCheck({
+        probe: def ? { ok: true, tools } : null,
+        challenge: 'none',
+        missingSecrets: [],
+        builtinSignedIn: app.builtin?.authorized(connector.name) ?? false,
+        builtinProvider: def ? { name: def.provider.displayName, dynamicRegistration: def.provider.dynamicRegistration } : undefined,
+      });
+    } else {
+      const available = new Set(app.secrets?.list() ?? []);
+      const missing = computeMissingSecrets(connector, available);
+      const mounted = missing.length ? null : await app.mountConnector(connector);
+      verdict = decideCheck(await gatherCustomSignals(connector, mounted, missing));
+    }
+    store.setConnectorStatus(connector.id, verdict.status, verdict.detail ?? null);
+    return verdict;
+  };
 
   // --- secrets (keychain-backed; values never reach the model) ---
   try {
@@ -166,7 +223,19 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
       `${cfg.paths.secrets}.index`,
     );
     log.info(`secrets backend: ${app.secrets.backendName}`);
-    app.connectorAuth = new ConnectorAuthService(app.secrets, cfg.port);
+    app.connectorAuth = new ConnectorAuthService(app.secrets, () => app.cfg.port);
+  } catch (err) {
+    log.warn('secrets backend unavailable', (err as Error).message);
+  }
+  // Built-in connectors are served regardless; without a secrets backend they simply cannot be
+  // signed in to, and the check says so.
+  app.builtin = new BuiltinService(
+    app.connectorAuth,
+    () => app.cfg.port,
+    readPackageVersion(path.dirname(fileURLToPath(import.meta.url)), (p) => fs.existsSync(p), (p) => fs.readFileSync(p, 'utf8')),
+  );
+  try {
+    void 0;
   } catch (err) {
     log.warn('secrets backend unavailable', (err as Error).message);
   }

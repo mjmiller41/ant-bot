@@ -6,10 +6,11 @@ import { workspaceRelative } from '../app.js';
 import {
   ApprovalDecisionRequest, CreateRuleRequest, CreateRoutineRequest, CreateSkillRequest,
   SettingsPatchSchema, LimitError, type UsageSummary, type SearchResult,
-  CreateConnectorRequest, UpdateConnectorRequest,
+  CreateConnectorRequest, UpdateConnectorRequest, type Connector, type ApiConnector, type ApiCatalogEntry,
 } from '@antbot/contract';
-import { computeMissingSecrets, extractSecretRefs, buildMcpServerConfig } from '../bots/connectors.js';
-import { probeConnector } from '../bots/mcpProbe.js';
+import { computeMissingSecrets } from '../bots/connectors.js';
+import { BUILTIN_CATALOG } from '../connectors/builtin/catalog.js';
+import { redirectUri } from '../connectors/auth.js';
 
 export function registerOpsRoutes(f: FastifyInstance, app: App): void {
   const { store, gateway, bus } = app;
@@ -54,43 +55,92 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
   });
 
   /* ---------------------------- connectors --------------------------- */
-  /** Secret values never appear here: rows hold `{{secret:NAME}}` references and nothing more. */
-  f.get('/api/connectors', async () => {
-    const available = new Set(app.secrets?.list() ?? []);
-    return store.listConnectors().map((c) => ({
-      ...c,
-      missingSecrets: computeMissingSecrets(c, available),
-      // Names only — knowing a connector is signed in never requires reading its token.
-      signedIn: app.connectorAuth?.isAuthorized(c.name) ?? false,
-    }));
+  const describe = (c: Connector): ApiConnector => ({
+    ...c,
+    missingSecrets: computeMissingSecrets(c, new Set(app.secrets?.list() ?? [])),
+    // Names only — knowing a connector is signed in never requires reading its token.
+    signedIn: app.connectorAuth?.isAuthorized(c.name) ?? false,
   });
 
+  /** Secret values never appear here: rows hold `{{secret:NAME}}` references and nothing more. */
+  f.get('/api/connectors', async () => store.listConnectors().map(describe));
+
+  /** The built-in connectors ant-bot ships, with what setting each up involves. */
+  f.get('/api/connectors/catalog', async (): Promise<ApiCatalogEntry[]> =>
+    Object.values(BUILTIN_CATALOG).map((b) => ({
+      name: b.name,
+      displayName: b.displayName,
+      description: b.description,
+      provider: b.provider.displayName,
+      needsClientCredentials: !b.provider.dynamicRegistration,
+      setupSteps: b.provider.setupSteps.map((step) => step.replace('{redirectUri}', redirectUri(app.cfg.port))),
+    })),
+  );
+
+  /**
+   * Add a connector — a custom command/URL, or a built-in by catalog name — assign it to bots, and
+   * check it, all in one call. The verdict comes back with the row so the caller can say what to
+   * do next without a second round trip.
+   */
   f.post('/api/connectors', async (req, reply) => {
     const parsed = CreateConnectorRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid body' });
-    if (store.getConnectorByName(parsed.data.name)) {
-      return reply.code(409).send({ error: `A connector named "${parsed.data.name}" already exists` });
+    const body = parsed.data;
+    if (store.getConnectorByName(body.name)) {
+      return reply.code(409).send({ error: `A connector named "${body.name}" already exists` });
     }
-    return store.createConnector(parsed.data);
+    let created: Connector;
+    if (body.builtin) {
+      const def = app.builtin?.get(body.builtin);
+      if (!def) return reply.code(400).send({ error: `No built-in connector named "${body.builtin}"` });
+      // The name is fixed: tool names (`mcp__gmail__send_message`) and the seeded rules that gate
+      // them depend on it.
+      if (body.name !== def.name) return reply.code(400).send({ error: `The built-in ${def.name} connector must be named "${def.name}"` });
+      created = store.createConnector({
+        name: def.name, description: body.description || def.description,
+        config: app.builtin!.rowConfig(def.name), kind: 'builtin', enabled: body.enabled,
+      });
+    } else {
+      created = store.createConnector({ name: body.name, description: body.description, config: body.config!, enabled: body.enabled });
+    }
+    for (const botId of body.botIds ?? []) {
+      if (!store.getBot(botId)) continue;
+      const current = store.listBotConnectors(botId).map((c) => c.id);
+      store.setBotConnectors(botId, [...new Set([...current, created.id])]);
+    }
+    const check = await app.checkConnector(created);
+    return { ...describe(store.getConnector(created.id)!), check };
   });
 
   f.patch<{ Params: { id: string } }>('/api/connectors/:id', async (req, reply) => {
     const parsed = UpdateConnectorRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body' });
-    const updated = store.updateConnector(req.params.id, parsed.data);
-    if (!updated) return reply.code(404).send({ error: 'No such connector' });
-    return updated;
+    const existing = store.getConnector(req.params.id);
+    if (!existing) return reply.code(404).send({ error: 'No such connector' });
+    // A built-in's config is the daemon's own endpoint; only enabled/description may change.
+    if (existing.kind === 'builtin' && parsed.data.config) return reply.code(400).send({ error: 'A built-in connector has no editable config' });
+    return describe(store.updateConnector(req.params.id, parsed.data)!);
   });
 
   f.delete<{ Params: { id: string } }>('/api/connectors/:id', async (req, reply) => {
-    if (!store.getConnector(req.params.id)) return reply.code(404).send({ error: 'No such connector' });
+    const c = store.getConnector(req.params.id);
+    if (!c) return reply.code(404).send({ error: 'No such connector' });
+    await app.connectorAuth?.signOut(c.name);
     store.deleteConnector(req.params.id);
     return { ok: true };
   });
 
+  /** One honest verdict: ready, needs sign-in, needs a credential, or unreachable. Persisted. */
+  f.post<{ Params: { id: string } }>('/api/connectors/:id/check', async (req, reply) => {
+    const connector = store.getConnector(req.params.id);
+    if (!connector) return reply.code(404).send({ error: 'No such connector' });
+    return app.checkConnector(connector);
+  });
+
   /**
    * Begin an interactive sign-in. Returns the URL the human must open; the browser comes back to
-   * the callback below. `clientId` is needed only for providers without dynamic registration.
+   * the callback below. `clientId`/`clientSecret` are needed only for providers without dynamic
+   * registration — Google, for the built-in connectors.
    */
   f.post<{ Params: { id: string }; Body: { clientId?: string; clientSecret?: string; scopes?: string[] } }>(
     '/api/connectors/:id/login',
@@ -99,7 +149,9 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
       if (!connector) return reply.code(404).send({ error: 'No such connector' });
       if (!app.connectorAuth) return reply.code(503).send({ error: 'Secrets backend unavailable, so sign-in cannot be stored' });
       try {
-        const { authorizeUrl } = await app.connectorAuth.beginLogin(connector, req.body ?? {});
+        const authorizeUrl = connector.kind === 'builtin'
+          ? await app.builtin!.beginLogin(connector, req.body ?? {})
+          : (await app.connectorAuth.beginLogin(connector, req.body ?? {})).authorizeUrl;
         return { authorizeUrl };
       } catch (err) {
         return reply.code(400).send({ error: (err as Error).message });
@@ -111,6 +163,7 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
     const connector = store.getConnector(req.params.id);
     if (!connector) return reply.code(404).send({ error: 'No such connector' });
     await app.connectorAuth?.signOut(connector.name);
+    store.setConnectorStatus(connector.id, 'needs-sign-in', null);
     return { ok: true };
   });
 
@@ -128,23 +181,14 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
          <p style="color:#9aa4b2">You can close this tab and return to ant-bot.</p>`;
 
       const { code, state, error, error_description: desc } = req.query;
-      if (error) {
-        return reply.type('text/html').send(page('Sign-in failed', `${error}: ${desc ?? ''}`, false));
-      }
-      if (!code || !state) {
-        return reply.type('text/html').send(page('Sign-in failed', 'The provider did not return a code.', false));
-      }
-      if (!app.connectorAuth) {
-        return reply.type('text/html').send(page('Sign-in failed', 'The secrets backend is unavailable.', false));
-      }
+      if (error) return reply.type('text/html').send(page('Sign-in failed', `${error}: ${desc ?? ''}`, false));
+      if (!code || !state) return reply.type('text/html').send(page('Sign-in failed', 'The provider did not return a code.', false));
+      if (!app.connectorAuth) return reply.type('text/html').send(page('Sign-in failed', 'The secrets backend is unavailable.', false));
       try {
-        const { connectorName } = await app.connectorAuth.completeLogin(state, code);
-        bus.publish({
-          type: 'notify', botId: null, threadId: null,
-          title: 'Connector signed in',
-          body: `${connectorName} is now authorised.`,
-          level: 'info',
-        });
+        const { connectorId, connectorName } = await app.connectorAuth.completeLogin(state, code);
+        const row = store.getConnector(connectorId);
+        if (row) await app.checkConnector(row);
+        bus.publish({ type: 'notify', botId: null, threadId: null, title: 'Connector signed in', body: `${connectorName} is now authorised.`, level: 'info' });
         return reply.type('text/html').send(page('Signed in', `<b>${connectorName}</b> is now authorised.`, true));
       } catch (err) {
         return reply.type('text/html').send(page('Sign-in failed', (err as Error).message, false));
@@ -153,26 +197,17 @@ export function registerOpsRoutes(f: FastifyInstance, app: App): void {
   );
 
   /**
-   * Connect to the server and list its tools. Secrets are resolved here, inside the daemon, and
-   * the response carries tool names and descriptions only — never the config they were put into.
+   * The daemon's own MCP endpoint for built-in connectors. Guarded by a per-boot bearer that only
+   * the runtime is handed at mount time; the provider token stays on this side of the line.
    */
-  f.post<{ Params: { id: string } }>('/api/connectors/:id/test', async (req, reply) => {
-    const connector = store.getConnector(req.params.id);
-    if (!connector) return reply.code(404).send({ error: 'No such connector' });
-    const refs = extractSecretRefs(connector.config);
-    const missing = computeMissingSecrets(connector, new Set(app.secrets?.list() ?? []));
-    if (missing.length) {
-      return { ok: false, tools: [], error: `missing secret(s): ${missing.join(', ')}` };
-    }
-    try {
-      const secrets = refs.length && app.secrets
-        ? await app.secrets.resolve(refs)
-        : new Map<string, string | null>();
-      return await probeConnector(buildMcpServerConfig(connector, secrets));
-    } catch (err) {
-      return { ok: false, tools: [], error: (err as Error).message };
-    }
+  f.post<{ Params: { name: string } }>('/mcp/:name', async (req, reply) => {
+    if (!app.builtin) return reply.code(503).send({ error: 'Built-in connectors unavailable' });
+    if (!app.builtin.checkBearer(req.headers.authorization)) return reply.code(401).send({ error: 'Unauthorized' });
+    const res = await app.builtin.handle(req.params.name, req.body);
+    if (res === null) return reply.code(202).send();
+    return res;
   });
+  f.delete<{ Params: { name: string } }>('/mcp/:name', async () => ({ ok: true }));
 
   /* ------------------------------ skills ----------------------------- */
   f.get('/api/skills', async () => store.listSkills());

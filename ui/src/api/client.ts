@@ -6,7 +6,8 @@ import type {
   Skill,
   Connector,
   ApiConnector,
-  ConnectorProbeResult,
+  ConnectorCheck,
+  ApiCatalogEntry,
   CreateConnectorRequest,
   UpdateConnectorRequest,
   Routine,
@@ -139,16 +140,24 @@ export const api = {
   secrets: {
     /** Names only — the API never returns a secret value, so neither can the UI show one. */
     list: () => request<{ backend: string; names: string[] }>('/secrets'),
+    set: (name: string, value: string) =>
+      request<{ ok: true; names: string[] }>('/secrets', { method: 'POST', ...json({ name, value }) }),
+    remove: (name: string) =>
+      request<{ ok: true; names: string[] }>(`/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   },
 
   connectors: {
     list: () => request<ApiConnector[]>('/connectors'),
+    /** The built-in connectors ant-bot ships, with what setting each up involves. */
+    catalog: () => request<ApiCatalogEntry[]>('/connectors/catalog'),
+    /** Adds, assigns to `botIds`, and checks — the verdict comes back with the row. */
     create: (body: CreateConnectorRequest) =>
-      request<Connector>('/connectors', { method: 'POST', ...json(body) }),
+      request<ApiConnector & { check: ConnectorCheck }>('/connectors', { method: 'POST', ...json(body) }),
+    /** One honest verdict: ready, needs sign-in, needs a credential, or unreachable. */
+    check: (id: string) => request<ConnectorCheck>(`/connectors/${id}/check`, { method: 'POST', ...json({}) }),
     update: (id: string, body: UpdateConnectorRequest) =>
       request<Connector>(`/connectors/${id}`, { method: 'PATCH', ...json(body) }),
     remove: (id: string) => request<{ ok: true }>(`/connectors/${id}`, { method: 'DELETE' }),
-    test: (id: string) => request<ConnectorProbeResult>(`/connectors/${id}/test`, { method: 'POST', ...json({}) }),
     /** Start an interactive sign-in; returns the URL the human must open. */
     login: (id: string, body: { clientId?: string; clientSecret?: string; scopes?: string[] }) =>
       request<{ authorizeUrl: string }>(`/connectors/${id}/login`, { method: 'POST', ...json(body) }),

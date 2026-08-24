@@ -133,15 +133,24 @@ Two things worth calling out explicitly:
 
 ## Connectors (MCP servers)
 
-A connector is a third-party MCP server. Four things decide what one can do:
+A connector is an MCP server — a third-party one, or a **built-in** the daemon serves itself.
+Five things decide what one can do:
+
+**ant-bot is the host, and mounting is strict.** Every Claude turn runs with `strictMcpConfig`, so
+the SDK mounts exactly the servers ant-bot passes: not `~/.claude.json`, not a plugin's `.mcp.json`
+(`skipMcpDiscovery`), not claude.ai connectors. A bot's tool surface cannot change because of
+something configured outside ant-bot, and what the Connectors screen shows is the whole truth.
 
 **Assignment is the permission.** A connector is registered account-wide but mounted only for
 bots it is assigned to, per turn. A bot with no assignment never sees the server at all — not a
 denied tool, an absent one. Disabling a connector takes it away from every bot at once.
 
 **Tools are gated like any other tool.** They reach the gateway as `mcp__<name>__<tool>` and hit
-the same evaluation order. No rule ships for them, so the first call falls through to
-"No rule covers this action" and asks you. Two caveats worth knowing:
+the same evaluation order. No rule ships for a third-party connector, so the first call falls
+through to "No rule covers this action" and asks you. The one exception is deliberate: the
+built-in Gmail server's `mcp__gmail__send_message` and `mcp__gmail__create_draft` ship with a
+`require` rule, because those tool names are ant-bot's own and fixed — a seeded rule can name them
+exactly without touching anything else. Two caveats worth knowing:
 
 - *Auto-review can allow one.* When no `require` rule matches, auto-review (Haiku) may return
   `allow_ok` and the call proceeds without asking. For a connector that can spend money, publish,
@@ -165,6 +174,18 @@ The honest limit: the value does reach the connector's own process. A malicious 
 MCP server can exfiltrate the credentials you gave it, exactly as it could if you exported them
 into a shell and ran the same program. Only mount servers you would trust with the token, and
 give each connector its own least-privileged credential.
+
+**Built-in connectors hold the provider token and serve it to nobody.** `antbot mcp add gmail`
+runs no third-party code: the daemon serves the MCP endpoint at `POST /mcp/gmail`, calls Gmail's
+REST API with a token from ant-bot's own OAuth flow, and returns tool *results*. The token lives in
+the keychain (`antbot:oauth:gmail`), the OAuth client you created under `antbot:oauth-client:google`,
+and neither ever reaches the model, a subprocess, or a response. The endpoint is loopback-only
+like the rest of the API and additionally demands a bearer generated at boot and placed only in
+the daemon's own mount config — a bot's subprocess that learns the path still gets 401.
+
+**The check is honest.** `antbot mcp check` decides "needs sign-in" from a `tools/call` challenge,
+not from `tools/list`, because many servers describe their tools to anyone. A green check means a
+call would be allowed, not merely that the server answered.
 
 ## Secrets
 

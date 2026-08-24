@@ -52,8 +52,11 @@ const toSkill = (r: Row): Skill => ({
  */
 const toConnector = (r: Row): Connector => ({
   id: r.id, name: r.name, description: r.description,
+  kind: r.kind === 'builtin' ? 'builtin' : 'custom',
   config: ConnectorConfigSchema.parse(JSON.parse(r.config_json)),
-  enabled: b(r.enabled), createdAt: r.created_at,
+  enabled: b(r.enabled),
+  lastStatus: r.last_status ?? null, lastError: r.last_error ?? null, checkedAt: r.checked_at ?? null,
+  createdAt: r.created_at,
 });
 const toRoutine = (r: Row): Routine => ({
   id: r.id, botId: r.bot_id, name: r.name, cronExpr: r.cron_expr, timezone: r.timezone,
@@ -406,12 +409,19 @@ export class Store {
   }
 
   /* ---- connectors ---- */
-  createConnector(c: { name: string; description?: string; config: ConnectorConfig; enabled?: boolean }): Connector {
+  createConnector(c: { name: string; description?: string; config: ConnectorConfig; enabled?: boolean; kind?: 'custom' | 'builtin' }): Connector {
     const id = newId();
     this.db.prepare(
-      `INSERT INTO connectors (id,name,description,config_json,enabled,created_at) VALUES (?,?,?,?,?,?)`,
-    ).run(id, c.name, c.description ?? '', JSON.stringify(c.config), i(c.enabled, true), now());
+      `INSERT INTO connectors (id,name,description,config_json,enabled,kind,created_at) VALUES (?,?,?,?,?,?,?)`,
+    ).run(id, c.name, c.description ?? '', JSON.stringify(c.config), i(c.enabled, true), c.kind ?? 'custom', now());
     return this.getConnector(id)!;
+  }
+  /** Record the latest verdict. Written by both `check` and the turn's own mount report. */
+  setConnectorStatus(id: string, status: string, error: string | null = null): void {
+    this.db.prepare(`UPDATE connectors SET last_status=?, last_error=?, checked_at=? WHERE id=?`).run(status, error, now(), id);
+  }
+  setConnectorStatusByName(name: string, status: string, error: string | null = null): void {
+    this.db.prepare(`UPDATE connectors SET last_status=?, last_error=?, checked_at=? WHERE name=?`).run(status, error, now(), name);
   }
   getConnector(id: string): Connector | null {
     const r = this.db.prepare(`SELECT * FROM connectors WHERE id=?`).get(id) as Row | undefined;

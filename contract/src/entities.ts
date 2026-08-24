@@ -80,6 +80,8 @@ export const CardSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('approval'), approvalId: z.string() }),
   z.object({ type: z.literal('handoff'), fromBotId: z.string(), toBotId: z.string(), note: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
+  /** A connector asked for a sign-in mid-turn. The link is the provider's; the bot never sees it. */
+  z.object({ type: z.literal('signin'), serverName: z.string(), url: z.string() }),
 ]);
 export type Card = z.infer<typeof CardSchema>;
 
@@ -211,10 +213,31 @@ export const ConnectorSchema = z.object({
   description: z.string().default(''),
   /** Account-wide switch. A disabled connector mounts for nobody, whatever the assignments say. */
   enabled: z.boolean().default(true),
+  /**
+   * `builtin` — served by the daemon itself (Gmail…), credentials held by the daemon, config
+   * points at the daemon's own `/mcp/<name>`. `custom` — a command or URL the user added.
+   */
+  kind: z.enum(['custom', 'builtin']).default('custom'),
   config: ConnectorConfigSchema,
+  /** Last verdict from a check or a turn: ready | needs-sign-in | needs-credential | unreachable | connected | failed… */
+  lastStatus: z.string().nullable().default(null),
+  lastError: z.string().nullable().default(null),
+  checkedAt: z.number().nullable().default(null),
   createdAt: z.number(),
 });
 export type Connector = z.infer<typeof ConnectorSchema>;
+
+/** The verdict `POST /api/connectors/:id/check` returns, and what `add` prints. */
+export const ConnectorCheckSchema = z.object({
+  status: z.enum(['ready', 'needs-sign-in', 'needs-credential', 'unreachable']),
+  /** For needs-sign-in: whether the provider lets ant-bot register itself (no client ID needed). */
+  selfRegistration: z.boolean().optional(),
+  /** Who is asking for the sign-in, when known — "Google", "accounts.example.com". */
+  provider: z.string().optional(),
+  tools: z.array(z.object({ name: z.string(), description: z.string() })).default([]),
+  detail: z.string().optional(),
+});
+export type ConnectorCheck = z.infer<typeof ConnectorCheckSchema>;
 
 export const RoutineSchema = z.object({
   id: z.string(),

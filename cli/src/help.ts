@@ -19,6 +19,7 @@ Daemon:
 Data:
   skill <subcommand>   Manage the skills your bots can use
   mcp <subcommand>     Manage the MCP servers your bots can use
+  secret <subcommand>  Credentials in your keychain (mcp add stores them for you)
   backup [--out PATH]  Archive the database, config, skills, and bot memory
   restore <path>       Restore from a backup archive
 
@@ -35,42 +36,41 @@ Environment:
 The UI lives at http://127.0.0.1:4780 and is served by the daemon itself.`;
 
 /** `mcp` and its older alias `connector` share one help text. */
-const MCP_HELP = `antbot mcp — manage the MCP servers your bots can use
+const MCP_HELP = `antbot mcp — the MCP servers your bots can use
 
 Usage: antbot mcp <subcommand>
 
-  list                    Show every server, with warnings for anything unusable
-  add <name> ...          Add one: --stdio "<cmd>" or --url <url>
-  login <name>            Sign in interactively (http/sse servers that need OAuth)
-  logout <name>           Forget a stored sign-in
-  enable|disable <name>   Turn one on or off for every bot at once
-  remove <name>           Delete it, and every bot's assignment to it
-  test <name>             Connect and list the tools it offers
+  add <name> [<command> | <url>]   Add one. No command or URL means a built-in (e.g. gmail).
+      --env VAR[=value]            stdio: an env var. Without =value you are prompted, and the
+                                   value goes to the keychain — it never appears in config.
+      --header K[=V]               http: a header, same rule.
+      --bots a,b | all | none      Which bots get it. Asked interactively if omitted.
+  check <name>                     One honest verdict: ready / needs sign-in / needs credential /
+                                   unreachable, plus the tools it offers.
+  login <name>                     Sign in (again). --client-id / --client-secret for providers
+                                   that will not register apps themselves (Google).
+  logout <name>                    Forget a stored sign-in.
+  enable|disable <name>            Turn one off for every bot at once, or back on.
+  remove <name>                    Delete it, and every bot's assignment to it.
+  list                             Everything, with state and which bots have each.
 
-A server is registered once for the account and then assigned to individual bots in
-Bot settings — a bot with no assignment cannot see its tools at all. Its tools reach
-bots as \`mcp__<name>__<tool>\` and pass the permission gateway like any other tool,
-so the first call asks you for approval.
+Examples:
+  antbot mcp add gmail                                             built-in; guided setup
+  antbot mcp add github "npx -y @modelcontextprotocol/server-github" --env GITHUB_TOKEN
+  antbot mcp add vercel https://mcp.vercel.com                     signs in automatically
 
-Credentials, two ways. A static token goes in a header or an env var, written as
-{{secret:NAME}} so the value stays in your keychain:
-
-  antbot mcp add fs --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp"
-  antbot mcp add gh --url https://api.example.com/mcp \\
-    --header "Authorization=Bearer {{secret:GH_TOKEN}}"
-
-A server that wants an interactive sign-in instead uses \`login\`, which discovers
-what it accepts and prints a URL to open:
-
-  antbot mcp login gmail
-
-Providers that support dynamic client registration need nothing else. Some — Google
-among them — do not, and want a client ID you create in their console, with
-http://127.0.0.1:4780/api/connectors/oauth/callback as an authorised redirect URI:
-
-  antbot mcp login gmail --client-id YOUR_ID.apps.googleusercontent.com
+A connector is registered once and assigned to bots in Bot settings — a bot with no assignment
+cannot see its tools at all. Tools reach bots as \`mcp__<name>__<tool>\` and pass the permission
+gateway like any other tool, so the first call asks you for approval.
 
 \`connector\` is the older name for this command and still works.`;
+
+const SECRET_HELP = `antbot secret — credentials in your keychain
+
+Usage: antbot secret list | set <NAME> | remove <NAME>
+
+Values are prompted for, never passed on the command line, and never shown again. Most people
+never need this directly: \`antbot mcp add … --env VAR\` stores what a connector needs for you.`;
 
 const COMMAND_HELP: Record<Command, string> = {
   start: `antbot start — start the daemon in the background
@@ -183,6 +183,7 @@ In a git checkout there is nothing for a package manager to update — use
 
   connector: MCP_HELP,
   mcp: MCP_HELP,
+  secret: SECRET_HELP,
 
   restore: `antbot restore — restore from a backup archive
 

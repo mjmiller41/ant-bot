@@ -22,7 +22,7 @@ import {
 } from './daemon.js';
 import { createBackup, restoreBackup } from './backup.js';
 import { runSkillCommand } from './skill.js';
-import { runConnectorCommand } from './connector.js';
+import { runMcpCommand, runSecretCommand } from './mcp.js';
 import { runUpdateCommand, printUpdateNotice } from './updateCommand.js';
 
 async function runDoctorCommand(): Promise<number> {
@@ -221,7 +221,12 @@ async function main(): Promise<void> {
     case 'mcp':
     case 'connector': {
       const cfg = loadConfig();
-      process.exit(await runConnectorCommand(parsed.positionals, cfg.port));
+      process.exit(await runMcpCommand(parsed.positionals, cfg.port));
+      return;
+    }
+    case 'secret': {
+      const cfg = loadConfig();
+      process.exit(await runSecretCommand(parsed.positionals, cfg.port));
       return;
     }
     case 'backup':

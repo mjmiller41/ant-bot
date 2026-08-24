@@ -64,6 +64,19 @@ CREATE TABLE bot_connectors (
 );
 `,
   },
+  {
+    version: 3,
+    name: 'connector-kind-and-health',
+    // Built-in connectors (served by the daemon) alongside custom ones, and the last verdict a
+    // check or a turn reached — so the screen shows a connector's real state instead of a toast
+    // that has already vanished.
+    up: `
+ALTER TABLE connectors ADD COLUMN kind TEXT NOT NULL DEFAULT 'custom';
+ALTER TABLE connectors ADD COLUMN last_status TEXT;
+ALTER TABLE connectors ADD COLUMN last_error TEXT;
+ALTER TABLE connectors ADD COLUMN checked_at INTEGER;
+`,
+  },
 ];
 
 export const SCHEMA_VERSION_SQL = `

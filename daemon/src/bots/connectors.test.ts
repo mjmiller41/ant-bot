@@ -11,7 +11,7 @@ import {
 } from './connectors.js';
 
 const connector = (name: string, config: ConnectorConfig): Connector =>
-  ({ id: `id-${name}`, name, description: '', enabled: true, config, createdAt: 0 });
+  ({ id: `id-${name}`, name, description: '', enabled: true, kind: 'custom' as const, config, lastStatus: null, lastError: null, checkedAt: null, createdAt: 0 });
 
 const stdio = (env: Record<string, string> = {}): ConnectorConfig =>
   ({ transport: 'stdio', command: 'npx', args: ['-y', 'srv'], env });
@@ -186,8 +186,8 @@ describe('describeMcpStatus', () => {
     expect(describeMcpStatus('needs-auth')).toMatch(/authentication/i);
   });
 
-  it('points a failed server at the test command', () => {
-    expect(describeMcpStatus('failed')).toMatch(/antbot connector test/);
+  it('points a failed server at the check command', () => {
+    expect(describeMcpStatus('failed')).toMatch(/antbot mcp check/);
   });
 
   it('covers pending and disabled', () => {

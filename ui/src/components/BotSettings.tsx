@@ -252,32 +252,33 @@ function SkillRow({
  */
 function ConnectorsEditor({ botId }: { botId: string }) {
   const [connectors, setConnectors] = useState<ApiConnector[]>([]);
-  const [enabled, setEnabled] = useState<Set<string>>(new Set());
-  const [saved, setSaved] = useState(false);
+  const [enabled, setEnabled] = useState<Set<string> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.connectors.list().then(setConnectors);
   }, []);
 
-  // Same trap as the skills panel: without seeding from what the bot already has, the first
-  // "Save connectors" writes an empty list and quietly revokes everything.
+  // Seeded from what the bot already has before any toggle can write: `null` until then, so a
+  // click cannot save an empty list and quietly revoke everything.
   useEffect(() => {
     api.bots.connectors.get(botId).then((assigned) => setEnabled(new Set(assigned.map((c) => c.id))));
   }, [botId]);
 
-  function toggle(id: string) {
-    setEnabled((cur) => {
-      const next = new Set(cur);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-    setSaved(false);
-  }
-
-  async function save() {
-    await api.bots.connectors.set(botId, Array.from(enabled));
-    setSaved(true);
+  // Every toggle saves. There is no Save button to forget, and nothing to be "unsaved".
+  async function toggle(id: string) {
+    if (!enabled) return;
+    const next = new Set(enabled);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setEnabled(next);
+    setError(null);
+    try {
+      await api.bots.connectors.set(botId, Array.from(next));
+    } catch (err) {
+      setEnabled(enabled);
+      setError(err instanceof ApiError ? err.message : 'Could not save');
+    }
   }
 
   if (connectors.length === 0) {
@@ -288,22 +289,20 @@ function ConnectorsEditor({ botId }: { botId: string }) {
     <div className="space-y-2">
       {connectors.map((c) => (
         <label key={c.id} className="flex items-start gap-2 text-xs">
-          <input type="checkbox" checked={enabled.has(c.id)} onChange={() => toggle(c.id)} className="mt-0.5" />
+          <input type="checkbox" checked={enabled?.has(c.id) ?? false} disabled={!enabled} onChange={() => toggle(c.id)} className="mt-0.5" />
           <span className="min-w-0">
             <span className="font-medium">{c.name}</span>
-            <span className="ml-1 text-(--color-text-muted)">{String(c.config.transport)}</span>
+            <span className="ml-1 text-(--color-text-muted)">{c.kind === 'builtin' ? 'built-in' : String(c.config.transport)}</span>
             {!c.enabled && <span className="ml-1 text-(--color-text-muted)">(disabled)</span>}
             {c.missingSecrets.length > 0 && (
               <span className="ml-1 text-(--color-amber)">missing secret: {c.missingSecrets.join(', ')}</span>
             )}
+            {c.lastStatus === 'needs-sign-in' && <span className="ml-1 text-(--color-amber)">needs sign-in</span>}
             {c.description && <span className="block truncate text-(--color-text-muted)" title={c.description}>{c.description}</span>}
           </span>
         </label>
       ))}
-      <button type="button" onClick={save} className="rounded bg-(--color-accent) px-3 py-1.5 text-xs font-medium text-(--color-accent-fg)">
-        Save connectors
-      </button>
-      {saved && <span className="ml-2 text-xs text-(--color-green)">Saved</span>}
+      {error && <p className="text-xs text-(--color-red)">{error}</p>}
     </div>
   );
 }

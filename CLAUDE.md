@@ -35,8 +35,8 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 43 test files / 841 tests passing**
-(contract 34, daemon 575, ui 92, cli 140). The table in `README.md` matches; if you touch it,
+Baseline as of this checkout: **build clean, typecheck clean, 48 test files / 882 tests passing**
+(contract 34, daemon 609, ui 98, cli 141). The table in `README.md` matches; if you touch it,
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
@@ -75,11 +75,12 @@ Daemon internals:
 | `src/api/routes-ops.ts` | approvals, rules, skills, secrets, routines, attachments, usage, search, settings, workspace, computer. |
 | `src/bots/manager.ts` | Turn queue + `execute()`: the heart. Builds the `antbot` MCP tool server, runs the turn, streams cards. |
 | `src/bots/prompt.ts` | System prompt assembly (persona + job description + memory + skills + roster). |
-| `src/agent/session.ts` | Thin wrapper over the SDK's `query()`; normalizes SDK messages into `TurnEvent`s. |
+| `src/agent/session.ts` | Thin wrapper over the SDK's `query()`; normalizes SDK messages into `TurnEvent`s. Owns `onElicitation` (mid-turn sign-in → `signin` card) and the reconnect after it. |
+| `src/agent/runtime.ts` | The `AgentRuntime` seam: `MountedConnector` is runtime-neutral, `ClaudeRuntime` turns it into SDK `mcpServers`. Gemini/Codex plug in here. |
 | `src/permissions/` | `gateway.ts` (decision flow) · `rules.ts` (matcher + `BUILTIN_RULES`) · `local.ts` (workspace boundary) · `autoreview.ts` (Haiku) · `secrets.ts` (keychain). |
 | `src/bots/connectors.ts` | Pure core for MCP connectors: secret-ref extraction, mount planning, config building. |
-| `src/connectors/` | `oauth.ts` (RFC 9728 discovery, PKCE, token exchange/refresh) · `auth.ts` (sign-in flow, keychain-backed tokens). |
-| `src/bots/mcpProbe.ts` | Hand-rolled MCP client behind `antbot connector test`. Advisory only, never in a turn. |
+| `src/connectors/` | `oauth.ts` (RFC 9728 discovery, PKCE, token exchange/refresh) · `auth.ts` (sign-in flow, keychain-backed tokens) · `check.ts` (`decideCheck`: the one honest verdict) · `builtin/` (`catalog.ts` what ships, `mcpServer.ts` hand-rolled MCP server, `gmail.ts` the tools, `service.ts` per-boot bearer + mounting). |
+| `src/bots/mcpProbe.ts` | Hand-rolled MCP client behind `antbot mcp check`. Advisory only, never in a turn. |
 | `src/skills/` | `skills.ts` (store, frontmatter) · `install.ts` (source parsing, git/url staging) · `plugin.ts` (local-plugin layout) · `bundled.ts` (shipped-skill sync + ledger) · `spec.ts` (Agent Skills spec validation). |
 | `src/scheduler/scheduler.ts` | node-cron per routine, own `nextRunAt` cron evaluator, away-guard logic. |
 | `src/computer/` | `browser.ts` (Playwright persistent context, screencast, takeover) · `tools.ts` (`browser_*` MCP server). |
@@ -155,7 +156,7 @@ a callback ant-bot did not start is refused, never exchanged.
 **Connector secret values exist in exactly one place.** A connector row stores `{{secret:NAME}}`
 references; `buildMcpServerConfig()` is the only code that turns one into a value, and its output
 goes straight into the turn's `mcpServers` map. Nothing else may return, log, or persist it —
-`GET /api/connectors` and `POST /api/connectors/:id/test` both carry references only. A reference
+`GET /api/connectors` and `POST /api/connectors/:id/check` both carry references only. A reference
 that resolves to nothing skips the connector for that turn rather than mounting the placeholder as
 if it were a credential.
 
@@ -163,8 +164,23 @@ if it were a credential.
 and reserve `antbot`/`browser` (`CONNECTOR_NAME_RE` in the contract). A name containing `__` would
 break the `mcp__<name>__<tool>` split, making the connector's tools unmatchable by the rules meant
 to gate them; a reserved name would overwrite a built-in server in the turn's map. Do not seed a
-`require mcp__*` builtin rule either — it matches the full alias of every existing `antbot`/
-`browser` tool, and a matching `require` beats every user `allow`.
+wildcard `require mcp__*` builtin rule — it matches the full alias of every existing `antbot`/
+`browser` tool, and a matching `require` beats every user `allow`. The two seeded
+`mcp__gmail__send_message` / `mcp__gmail__create_draft` rules are the deliberate exception: exact
+names of tools ant-bot itself serves, so they can match nothing else.
+
+**ant-bot is the MCP host; mounting is strict.** `session.ts` passes `strictMcpConfig: true` and
+plugins with `skipMcpDiscovery: true`, so a turn mounts exactly `req.mcpServers` (the in-process
+`antbot`/`browser`) plus `runtime.mountConnectors(req.connectors)` — never `~/.claude.json`, a
+plugin's `.mcp.json`, or claude.ai. Every mounted connector is `alwaysLoad: true`, so its tools sit
+in the prompt rather than behind `ToolSearch`. Connector config reaches the runtime only as a
+`MountedConnector` through `AgentRuntime`; do not hand SDK-shaped objects around the core.
+
+**Built-in connectors are served by the daemon and guarded by a per-boot bearer.** `POST /mcp/:name`
+answers only with `BuiltinService.bearer`, which exists in memory and in the mount config the
+daemon builds for its own turns. `handle()` fetches the provider token from `ConnectorAuthService`
+per call; the token never enters a tool result, a log, or a response. Adding a built-in means a
+catalog entry, a tools module, and — for anything that sends or spends — an exact seeded rule.
 
 **Secrets never enter the model's context.** `request_secret` returns a confirmation string only.
 `GET /api/secrets` returns names, never values. Do not add anything that puts a value in a
@@ -307,7 +323,7 @@ claim below by grep. Treat these as unimplemented, not as bugs to work around:
 
 | Gap | Evidence |
 |---|---|
-| Secrets reach connectors, not a bot's own shell | `SecretsService.resolve()` feeds connector env/headers; nothing injects a secret into the bot's `Bash` environment, and `envOverlay()` is still uncalled |
+| Secrets reach connectors, not a bot's own shell | `SecretsService.resolve()` feeds connector env/headers (stored by `antbot mcp add --env` / `antbot secret set` / Settings); nothing injects a secret into the bot's `Bash` environment, and `envOverlay()` is still uncalled |
 | File cards are never emitted | `type: 'file'` is only ever *rendered* (`Cards.tsx`); no server code creates one |
 | `request_secret` has no UI | the event lands in `useStore.secretRequests`; no component reads it |
 | Daily token budget | `dailyTokenBudget` is read only by `SettingsScreen`; nothing enforces it |

@@ -1,6 +1,7 @@
 import { query, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ModelTier, Settings } from '@antbot/contract';
 import { logger } from '../util/log.js';
+import { ClaudeRuntime, type MountedConnector } from './runtime.js';
 
 const log = logger('agent');
 
@@ -12,7 +13,7 @@ export interface McpStatus {
 }
 
 export interface TurnEvent {
-  kind: 'text' | 'tool_start' | 'tool_result' | 'session' | 'done' | 'error' | 'status' | 'mcp_status';
+  kind: 'text' | 'tool_start' | 'tool_result' | 'session' | 'done' | 'error' | 'status' | 'mcp_status' | 'signin';
   text?: string;
   toolName?: string;
   toolInput?: unknown;
@@ -24,6 +25,8 @@ export interface TurnEvent {
   message?: string;
   /** Present on `mcp_status`: every server the SDK tried to mount for this turn. */
   mcpStatus?: McpStatus[];
+  /** Present on `signin`: a connector asked for a browser sign-in mid-turn. */
+  signin?: { serverName: string; url: string };
 }
 
 export interface TurnRequest {
@@ -37,7 +40,10 @@ export interface TurnRequest {
   /** Extra directories the agent may read/write beyond cwd. */
   additionalDirectories?: string[];
   canUseTool?: Options['canUseTool'];
+  /** In-process SDK servers ant-bot itself provides (`antbot`, `browser`). Runtime-bound by nature. */
   mcpServers?: Options['mcpServers'];
+  /** The bot's assigned connectors, resolved. Mounted through the runtime adapter. */
+  connectors?: Record<string, MountedConnector>;
   abortController?: AbortController;
   /** Root of the local plugin that carries installed skills. */
   skillPluginPath?: string;
@@ -79,6 +85,8 @@ export function buildEnv(settings: Settings, base: NodeJS.ProcessEnv = process.e
  * Run one turn and yield normalized events. The caller owns persistence; this
  * wrapper only translates the SDK's message stream into our vocabulary.
  */
+const runtime = new ClaudeRuntime();
+
 export async function* runTurn(req: TurnRequest): AsyncGenerator<TurnEvent> {
   const abort = req.abortController ?? new AbortController();
   const options: Options = {
@@ -90,7 +98,14 @@ export async function* runTurn(req: TurnRequest): AsyncGenerator<TurnEvent> {
     includePartialMessages: true,
     permissionMode: 'default',
     canUseTool: req.canUseTool,
-    mcpServers: req.mcpServers,
+    mcpServers: {
+      ...(req.mcpServers ?? {}),
+      ...(runtime.mountConnectors(req.connectors ?? {}) as Options['mcpServers']),
+    },
+    // ant-bot is the MCP host. The SDK mounts exactly what is passed here and nothing else — not
+    // ~/.claude.json, not plugins, not claude.ai connectors. A bot's tools cannot change because
+    // of something configured outside ant-bot, and swapping the runtime later swaps only this.
+    strictMcpConfig: true,
     env: buildEnv(req.settings),
     // Do not inherit the user's own Claude Code project settings into bot turns.
     settingSources: [],
@@ -100,9 +115,26 @@ export async function* runTurn(req: TurnRequest): AsyncGenerator<TurnEvent> {
   // Load skills as a local plugin so the model gets the real `Skill` tool rather than a
   // pile of paths to read, then narrow to the ones assigned to this bot.
   if (req.skillPluginPath) {
-    options.plugins = [{ type: 'local', path: req.skillPluginPath }];
+    // skipMcpDiscovery: a skill directory must never be a way to mount an MCP server. Connectors
+    // come through `connectors` above, and only through there.
+    options.plugins = [{ type: 'local', path: req.skillPluginPath, skipMcpDiscovery: true }];
     options.skills = req.enabledSkills ?? [];
   }
+
+  // A connector can ask for a sign-in in the middle of a turn (an expired token, a first use).
+  // Without a handler the SDK declines on the bot's behalf and the tool call just fails. URL
+  // mode is accepted and surfaced as a card; the queue hands it to the generator, which yields
+  // it ahead of the next SDK message. Form mode is declined: a bot must never fill in a form a
+  // server put in front of it, and nothing here can show one to a human anyway.
+  const pending: TurnEvent[] = [];
+  options.onElicitation = async (request) => {
+    if (request.mode === 'url' && request.url) {
+      pending.push({ kind: 'signin', signin: { serverName: request.serverName, url: request.url } });
+      return { action: 'accept' };
+    }
+    log.warn(`declined a ${request.mode ?? 'form'} elicitation from "${request.serverName}": ${request.message}`);
+    return { action: 'decline' };
+  };
 
   let q: ReturnType<typeof query>;
   try {
@@ -116,10 +148,20 @@ export async function* runTurn(req: TurnRequest): AsyncGenerator<TurnEvent> {
 
   try {
     for await (const msg of q as AsyncGenerator<SDKMessage>) {
+      while (pending.length) yield pending.shift()!;
       const m = msg as Record<string, any>;
       switch (m.type) {
         case 'system':
           if (m.subtype === 'init' && m.session_id) yield { kind: 'session', sessionId: m.session_id };
+          // The sign-in finished in the browser; the server's tools only return once the SDK
+          // reconnects with the new token, and it does not do that on its own.
+          if (m.subtype === 'elicitation_complete' && typeof m.mcp_server_name === 'string') {
+            try {
+              await q.reconnectMcpServer(m.mcp_server_name);
+            } catch (err) {
+              log.warn(`reconnect of "${m.mcp_server_name}" after sign-in failed: ${(err as Error).message}`);
+            }
+          }
           // The init message is the only place the SDK reports whether a mounted MCP server
           // actually came up. Dropping it is how a connector that needs auth, or failed to
           // start, becomes a bot that silently has no such tools and cannot say why.

@@ -6,6 +6,7 @@
 // action: which connectors are usable, which are missing credentials, and what the human should
 // be told. Keeping that pure means every branch is testable without a keychain or a subprocess.
 import type { Connector, ConnectorConfig } from '@antbot/contract';
+import type { MountedConnector } from '../agent/runtime.js';
 
 /**
  * A reference to a stored secret, embeddable inside a value: `Bearer {{secret:GH_TOKEN}}`.
@@ -92,13 +93,12 @@ const substituteAll = (
  *
  * The returned object is the only representation that holds real credentials. It goes straight
  * into the turn's `mcpServers` map and is never persisted, logged, or returned by a route.
- * Typed loosely on purpose: the SDK's `McpServerConfig` union is re-declared per transport and
- * the caller passes this through verbatim.
+ * Runtime-neutral: this is ant-bot's own shape, and the agent runtime's adapter translates it.
  */
 export function buildMcpServerConfig(
   connector: Connector,
   secrets: ReadonlyMap<string, string | null>,
-): Record<string, unknown> {
+): MountedConnector {
   const c = connector.config;
   if (c.transport === 'stdio') {
     return {

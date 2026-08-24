@@ -233,6 +233,9 @@ Plain `antbot` after `npm i -g @michael-joseph-miller/ant-bot`, or `./antbot` fr
 | `antbot skill add <source>` | Install a skill from a git repo, a local path, or a `SKILL.md` URL. See [section 10](#10-skills). |
 | `antbot skill remove <slug>` | Uninstall a skill. |
 | `antbot skill lint [path]` | Check skills against the Agent Skills spec. No daemon needed. See [section 10](#10-skills). |
+| `antbot mcp add <name> [command \| url]` | Give Bots an MCP server: a built-in (`gmail`), a local command, or a URL. One step — it checks, signs in, and asks which Bots. See [section 11](#11-connectors-mcp-servers). |
+| `antbot mcp list` / `check` / `login` / `logout` / `enable` / `disable` / `remove` | Everything else about connectors. `connector` is the older name and still works. |
+| `antbot secret set <NAME>` / `list` / `remove` | Credentials in your keychain, by name. `mcp add` stores what a connector needs for you. See [section 15](#15-secrets). |
 | `antbot backup [--out PATH]` | Write a `.tar.gz` of your database, config, skills, and Bot memory. |
 | `antbot restore <path> [--yes]` | Restore from a backup archive. Prompts for confirmation unless `--yes`. |
 
@@ -821,121 +824,108 @@ Permission Gateway. The two are complementary, not the same mechanism.
 
 ## 11. Connectors (MCP servers)
 
-A **connector** is an external MCP server — GitHub, a filesystem server, something internal — that
-gives Bots real tools instead of making them drive a website. You register one once for the
-account, then decide which Bots may use it.
+A **connector** gives Bots real tools — mail, GitHub, a filesystem, something internal — instead
+of making them drive a website. ant-bot is the host: it keeps the registry, the credentials, the
+sign-ins and the per-Bot assignment itself, and hands each Bot's turn a finished list. Nothing a
+Bot can use comes from anywhere else — not the `claude` CLI's own MCP settings, not claude.ai —
+so what a Bot has is exactly what you see on the **Connectors** screen.
 
-### Adding one
+There are three kinds, and adding any of them is one step:
 
-Open **Connectors** in the sidebar, or use the CLI:
+| Kind | Example | What it is |
+| --- | --- | --- |
+| **Built-in** | `antbot mcp add gmail` | A server ant-bot ships and runs itself, backed by the provider's own API and ant-bot's own sign-in. For providers that refuse third-party MCP clients (Google). |
+| **Local command** | `antbot mcp add github "npx -y @modelcontextprotocol/server-github" --env GITHUB_TOKEN` | A program ant-bot starts for each turn. |
+| **URL** | `antbot mcp add vercel https://mcp.vercel.com` | A remote server. If it wants a sign-in, that starts right after adding. |
 
-```bash
-antbot connector add fs --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp/demo"
-antbot connector test fs        # connect and list the tools it offers
-antbot connector list
-```
+In the UI it is the same: one **Add** field takes a built-in's name, a command, or a URL, and
+the name fills itself in. Credential rows appear only for a command or a URL.
 
-Two transports: `--stdio "<command>"` runs a local program, `--url <url>` talks to a remote server
-over HTTP (add `--transport sse` for an SSE endpoint). Names are lowercase letters, digits and
-hyphens; `antbot` and `browser` are reserved for the built-in tools.
+### What `add` does
+
+1. Registers the connector, and assigns it to the Bots you name (`--bots scout,planner`, `--bots
+   all`, or answer the prompt; checkboxes in the UI).
+2. Stores any credential you gave it. `--env TOKEN` with no `=value` prompts for the value with
+   echo off and puts it in your keychain as `mcp/<name>/TOKEN`; the connector's config carries a
+   reference to that name, never the value. `--env PORT=8080` is a plain literal. `--header` works
+   the same way for URLs.
+3. **Checks** the server and reports one honest verdict:
+   - `ready, N tools` — a Bot can use it now.
+   - `needs sign-in` — the server wants an interactive sign-in. `add` starts it (below).
+   - `needs a credential` — a referenced secret is missing, or the server rejected the one it has.
+   - `unreachable` — the command failed to start or the URL did not answer; the reason follows.
+
+   The check asks the server whether a *call* would be allowed, not just whether it will list
+   tools — many servers describe their tools to anyone and refuse the first real call.
+4. **Signs in** when the verdict says so. A provider that lets applications register themselves
+   needs nothing from you: a browser opens, you approve, the tokens land in your keychain, and
+   every later turn gets a fresh token, refreshed before it expires.
+
+`antbot mcp check <name>` runs step 3 again at any time; `antbot mcp login <name>` runs step 4.
+The Connectors screen shows the last verdict on every row — state that stays put, not a toast.
+
+### Gmail, and the one-time Google setup
+
+Google does not let an application register itself, and its own MCP endpoint accepts only
+clients Google has allowlisted. So ant-bot ships its own Gmail server: `antbot mcp add gmail`
+gives a Bot `search_threads`, `get_thread`, `get_message`, `list_labels`, `create_draft` and
+`send_message`, served by the daemon over Gmail's REST API with a token ant-bot obtained itself.
+
+What Google *does* require is an OAuth client you create once, in your own Google Cloud project.
+ant-bot walks you through it the first time and never again — the same client serves every
+Google connector:
+
+> 1. Open <https://console.cloud.google.com/apis/credentials> and create an **OAuth client ID** of
+>    type **Web application**.
+> 2. Under **Authorised redirect URIs**, add exactly:
+>    `http://127.0.0.1:4780/api/connectors/oauth/callback` (your port, if you changed it).
+> 3. Enable the **Gmail API** for the project (**APIs & Services → Library**).
+> 4. Paste the client ID and client secret when `antbot mcp add gmail` asks, or into the box the
+>    Connectors screen shows. Both go to your keychain.
+>
+> An unverified app shows Google's "this app isn't verified" interstitial; **Advanced → Go to
+> ant-bot** gets past it. Google also caps unverified apps at 100 test users, which is not a
+> concern for a personal install.
+
+`send_message` and `create_draft` ship with a `require` rule, so a Bot always asks before mail
+leaves your account. Reading and searching pass the gateway like any other tool: the first call
+asks, and an allow rule for `mcp__gmail__search_threads` settles it.
 
 ### Giving a Bot access
 
-**Assignment is the permission.** Open a Bot's settings, tick the connector under **Connectors**,
-and save. A Bot that has not been given a connector cannot see its tools at all — they are not
-denied, they are absent. Disabling a connector switches it off for every Bot at once.
+**Assignment is the permission.** A Bot that has not been given a connector cannot see its tools
+at all — they are not denied, they are absent. Tick connectors under **Connectors** in a Bot's
+settings; every tick saves. Disabling a connector switches it off for every Bot at once.
 
 A Bot's connector tools appear as `mcp__<connector>__<tool>` and pass the permission gateway like
 anything else, so the first call raises an approval card. Once you trust one, add an allow rule
 for it — write the full `mcp__<connector>__<tool>` form rather than the bare tool name (see
 [section 8](#8-rules)).
 
-### Credentials
+### When something is wrong
 
-Most useful connectors need an API key. Store it as a secret, then reference it by name:
+- **The Bot cannot see the tools.** Check the assignment first, then `antbot mcp check <name>`.
+  If a connector did not come up at the start of a turn, a warning appears in the thread naming it
+  and why, and the Connectors screen shows the same state.
+- **A sign-in expired mid-turn.** The Bot's thread gets a card — "*gmail* needs you to sign in" —
+  with an **Open** button. Finish the sign-in and the connector reconnects without a restart.
+- **`needs a credential`** names the missing secret. `antbot secret set mcp/<name>/<VAR>` stores
+  it; `antbot mcp check` confirms.
+- **A URL says `needs sign-in (Google)` and cannot self-register.** That is Google's MCP endpoint
+  refusing third-party clients. Use the built-in instead: `antbot mcp add gmail`.
 
-```bash
-antbot connector add gh --url https://api.example.com/mcp \
-  --header "Authorization=Bearer {{secret:GH_TOKEN}}"
-```
-
-`{{secret:NAME}}` works in any `--env` value (stdio) or `--header` value (http/sse), including in
-the middle of a longer string. ant-bot stores the *reference*; the daemon substitutes the value
-from your keychain when the server starts. The value never appears in the database, the API, the
-Bot's context, or a log.
-
-If a referenced secret does not exist, the Connectors screen flags it and the connector is simply
-not mounted — the Bot's turn still runs, without that connector. `antbot connector list` shows the
-same warning.
-
-### When a Bot cannot see a connector's tools
-
-Assignment is not the only thing that has to be true. The Bot's next turn tells you: if a
-connector did not come up, a warning appears in the thread naming it and why.
-
-The usual cause is authentication. `antbot connector test` and the **Test** button connect and
-list the server's tools — but many servers will describe their tools to anyone and only demand
-credentials on the first real call. A green test therefore means *reachable*, not *usable*, and
-the test says so when no credential was configured. What settles it is the turn: the Bot reports
-`needs authentication` and the daemon log carries the same line.
-
-If you see that, the server wants a credential ant-bot did not send. Add one as a header:
-
-```bash
-antbot connector remove gmail-mcp
-antbot connector add gmail-mcp --url https://example.com/mcp \
-  --header "Authorization=Bearer {{secret:MY_TOKEN}}"
-```
-
-Note the limitation: ant-bot itself only sends **static** credentials. A server that requires an
-interactive OAuth sign-in — most first-party Google and Microsoft endpoints — has nowhere to
-complete that sign-in from a Bot's turn.
-
-### Signing in to a connector
-
-Servers that want an interactive sign-in rather than a static token have their own flow. ant-bot
-does this itself — it does not borrow the `claude` CLI's credentials:
-
-```bash
-antbot mcp login gmail
-```
-
-Or press **Sign in** on the Connectors screen. ant-bot asks the server what it accepts, registers
-itself with the provider if the provider allows that, and prints (or opens) a URL. You sign in
-there; the browser returns to ant-bot and the tokens go into your keychain. From then on every
-turn gets a fresh access token, refreshed automatically before it expires.
-
-Some providers — Google among them — do not let an application register itself, and want a client
-ID you create in their own console. ant-bot says so when that happens and asks for one:
-
-```bash
-antbot mcp login gmail --client-id YOUR_ID.apps.googleusercontent.com \
-  --client-secret YOUR_SECRET
-```
-
-When you create that client, add this as an **authorised redirect URI**:
-
-```
-http://127.0.0.1:4780/api/connectors/oauth/callback
-```
-
-Google's **Web application** client type authenticates at the token endpoint, so it needs the
-client *secret* as well as the ID — with only the ID you get as far as the sign-in page and then
-`client_secret is missing`. Both are stored in your keychain the first time, so a later sign-in
-needs no flags at all.
-
-`antbot mcp logout <name>` forgets the sign-in. Tokens live in the keychain like any other
-secret — never in the database, never in an API response, never in a Bot's context.
-
-Other statuses you may see: `failed to start` (wrong command or URL — `connector test` will show
-the same), and `did not finish connecting in time`.
+Names are lowercase letters, digits and hyphens; `antbot` and `browser` are reserved for the
+built-in tools. `antbot mcp logout <name>` forgets a sign-in; `remove` deletes the connector and
+every Bot's assignment to it.
 
 ### What a connector can do
 
-A connector runs with whatever credential you gave it, in its own process. ant-bot's workspace
-boundary does not apply to it: it constrains what a Bot does directly, not what a server you
-mounted does on the Bot's behalf. Mount servers you would trust with the token, and give each one
-its own least-privileged credential. See `docs/SECURITY.md`.
+A local or URL connector runs with whatever credential you gave it, in its own process or on
+someone else's server. ant-bot's workspace boundary does not apply to it: it constrains what a
+Bot does directly, not what a server you mounted does on the Bot's behalf. Mount servers you would
+trust with the token, and give each one its own least-privileged credential. A built-in is
+different: the daemon holds the provider token and serves only tool *results* — no process but
+ant-bot's own ever sees the credential. See `docs/SECURITY.md`.
 
 ---
 
@@ -1066,31 +1056,25 @@ Backends, in order of preference: **libsecret** (`secret-tool`) on Linux, **macO
 **encrypted file** fallback (AES-256-GCM). The file fallback is explicitly weaker than a real
 keychain — the daemon logs which backend it chose at startup.
 
-A Bot can ask for a secret with its `request_secret` tool, giving a name and a reason.
-
-> ⚠️ **Secrets are stored but never delivered.** The tool publishes a request event and the value
-> goes to your keychain, but nothing injects it into the Bot's environment — the code that would
-> build that overlay is never called. A Bot cannot currently use a stored secret. Treat this screen
-> as a keychain front-end, not a working credential path. See
-> [Known limitations](#23-known-limitations).
-
-Secrets are currently managed through the API only:
+Most of the time you never touch this directly: `antbot mcp add … --env VAR` stores what a
+connector needs under `mcp/<connector>/<VAR>`, and a sign-in stores its tokens itself. When you do
+need to:
 
 ```bash
-# List the names you have stored (never values)
-curl -s http://127.0.0.1:4780/api/secrets
-
-# Store one
-curl -s -X POST http://127.0.0.1:4780/api/secrets \
-  -H 'content-type: application/json' \
-  -d '{"name":"STRIPE_API_KEY","value":"sk_live_…"}'
-
-# Remove one
-curl -s -X DELETE http://127.0.0.1:4780/api/secrets/STRIPE_API_KEY
+antbot secret list              # names only
+antbot secret set STRIPE_KEY    # prompts for the value, echo off
+antbot secret remove STRIPE_KEY
 ```
 
-Names must be valid environment-variable identifiers (letters, digits, underscore; not starting
-with a digit).
+or the **Secrets** section at the bottom of **Settings**, which lists names, takes a new one from a
+masked field, and removes. Names are letters, digits, `_`, `/`, `-` and `.`.
+
+A Bot can ask for a secret with its `request_secret` tool, giving a name and a reason.
+
+> ⚠️ **Stored secrets reach connectors, not a Bot's own shell.** A connector's process or headers
+> get the values its config references. Nothing injects a secret into the Bot's own environment,
+> so a Bot cannot use one from `Bash`, and `request_secret` still only records the request. See
+> [Known limitations](#23-known-limitations).
 
 **Never put a password in chat.** For anything interactive — a login, a 2FA code — the answer is
 takeover, not a secret.
@@ -1303,9 +1287,9 @@ These are honest gaps in the current build, not things to work around.
 
 ### Stored secrets reach connectors, but not a Bot's own shell
 
-A secret can now be handed to an MCP connector as `{{secret:NAME}}` (see
-[section 11](#11-connectors-mcp-servers)), and the daemon injects the value into that server's
-process. That is the only delivery path. Nothing injects a secret into the Bot's *own* environment,
+A secret stored for a connector (`antbot mcp add … --env VAR`, see
+[section 11](#11-connectors-mcp-servers)) is injected into that server's process or headers. That
+is the only delivery path. Nothing injects a secret into the Bot's *own* environment,
 so a Bot cannot use one from `Bash` — and `request_secret` still only records the request.
 
 There is also no per-connector allowlist: a connector receives exactly the secrets its own config

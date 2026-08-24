@@ -126,6 +126,11 @@ export const BUILTIN_RULES: Array<Omit<Rule, 'id' | 'createdAt'>> = [
   { kind: 'allow', toolPattern: 'Grep', inputPattern: '', scopeNote: 'Searching files is safe', builtin: true, enabled: true },
   { kind: 'allow', toolPattern: 'TodoWrite', inputPattern: '', scopeNote: 'Planning scratchpad', builtin: true, enabled: true },
   { kind: 'allow', toolPattern: 'Bash', inputPattern: '^\\s*(git\\s+(status|diff|log|show|branch)|ls|pwd|cat|head|tail|wc|echo|date|which|grep|find|rg)\\b', scopeNote: 'Read-only shell inspection', builtin: true, enabled: true },
+  // The one place a seeded `mcp__*` rule is right: these tool names are ant-bot's own (the gmail
+  // connector is served by the daemon), fixed, and fully qualified — so they cannot match a
+  // third-party server's tool by alias, and they are the two Gmail actions that leave the machine.
+  { kind: 'require', toolPattern: 'mcp__gmail__send_message', inputPattern: '', scopeNote: 'Sending email', builtin: true, enabled: true },
+  { kind: 'require', toolPattern: 'mcp__gmail__create_draft', inputPattern: '', scopeNote: 'Creating an email draft', builtin: true, enabled: true },
 ];
 
 /**

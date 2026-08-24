@@ -14,7 +14,8 @@ function fakeStore(initial: Record<string, string> = {}) {
 }
 
 const httpConnector = (over: Partial<Connector> = {}): Connector => ({
-  id: 'c1', name: 'gmail', description: '', enabled: true, createdAt: 0,
+  id: 'c1', name: 'gmail', description: '', enabled: true, kind: 'custom', createdAt: 0,
+  lastStatus: null, lastError: null, checkedAt: null,
   config: { transport: 'http', url: 'https://x.dev/mcp', headers: {} }, ...over,
 });
 
@@ -42,7 +43,7 @@ describe('isAuthorized', () => {
     const { store } = fakeStore({ 'antbot:oauth:gmail': '{}' });
     let read = false;
     const spy: TokenStore = { ...store, async resolve(n) { read = true; return store.resolve(n); } };
-    const svc = new ConnectorAuthService(spy, 4780);
+    const svc = new ConnectorAuthService(spy, () => 4780);
     expect(svc.isAuthorized('gmail')).toBe(true);
     expect(svc.isAuthorized('other')).toBe(false);
     expect(read).toBe(false);
@@ -55,19 +56,19 @@ describe('authHeader', () => {
 
   it('returns a bearer for a signed-in connector', async () => {
     const { store } = fakeStore({ 'antbot:oauth:gmail': tokens() });
-    expect(await new ConnectorAuthService(store, 4780).authHeader('gmail'))
+    expect(await new ConnectorAuthService(store, () => 4780).authHeader('gmail'))
       .toEqual({ Authorization: 'Bearer at' });
   });
 
   // Not an error: most connectors use a static credential or none at all.
   it('returns null when the connector was never signed in', async () => {
     const { store } = fakeStore();
-    expect(await new ConnectorAuthService(store, 4780).authHeader('gmail')).toBeNull();
+    expect(await new ConnectorAuthService(store, () => 4780).authHeader('gmail')).toBeNull();
   });
 
   it('treats an unreadable blob as not signed in', async () => {
     const { store } = fakeStore({ 'antbot:oauth:gmail': 'not json' });
-    expect(await new ConnectorAuthService(store, 4780).authHeader('gmail')).toBeNull();
+    expect(await new ConnectorAuthService(store, () => 4780).authHeader('gmail')).toBeNull();
   });
 
   // Mounting with a token known to be dead produces an opaque 401 in the middle of a bot's work;
@@ -76,19 +77,19 @@ describe('authHeader', () => {
     const { store } = fakeStore({
       'antbot:oauth:gmail': tokens({ expiresAt: 1, refreshToken: undefined }),
     });
-    expect(await new ConnectorAuthService(store, 4780).authHeader('gmail')).toBeNull();
+    expect(await new ConnectorAuthService(store, () => 4780).authHeader('gmail')).toBeNull();
   });
 
   it('does not refresh a token with no stated expiry', async () => {
     const { store } = fakeStore({ 'antbot:oauth:gmail': tokens() });
-    expect(await new ConnectorAuthService(store, 4780).authHeader('gmail')).toEqual({ Authorization: 'Bearer at' });
+    expect(await new ConnectorAuthService(store, () => 4780).authHeader('gmail')).toEqual({ Authorization: 'Bearer at' });
   });
 });
 
 describe('signOut', () => {
   it('drops the stored tokens', async () => {
     const { store, map } = fakeStore({ 'antbot:oauth:gmail': '{}' });
-    const svc = new ConnectorAuthService(store, 4780);
+    const svc = new ConnectorAuthService(store, () => 4780);
     await svc.signOut('gmail');
     expect(map.has('antbot:oauth:gmail')).toBe(false);
     expect(svc.isAuthorized('gmail')).toBe(false);
@@ -99,7 +100,7 @@ describe('completeLogin', () => {
   // The state is the CSRF guard: a callback we did not start must never mint a token.
   it('refuses a state it did not issue', async () => {
     const { store } = fakeStore();
-    await expect(new ConnectorAuthService(store, 4780).completeLogin('forged', 'code'))
+    await expect(new ConnectorAuthService(store, () => 4780).completeLogin('forged', 'code'))
       .rejects.toThrow(/no longer valid/);
   });
 });
@@ -108,7 +109,7 @@ describe('beginLogin', () => {
   it('refuses a stdio connector, which takes credentials in env instead', async () => {
     const { store } = fakeStore();
     const stdio = httpConnector({ config: { transport: 'stdio', command: 'x', args: [], env: {} } });
-    await expect(new ConnectorAuthService(store, 4780).beginLogin(stdio))
+    await expect(new ConnectorAuthService(store, () => 4780).beginLogin(stdio))
       .rejects.toThrow(/http and sse/);
   });
 });
@@ -119,7 +120,7 @@ describe('forgetClient', () => {
       'antbot:oauth-client:gmail': '{"clientId":"cid"}',
       'antbot:oauth:gmail': '{"accessToken":"at"}',
     });
-    await new ConnectorAuthService(store, 4780).forgetClient('gmail');
+    await new ConnectorAuthService(store, () => 4780).forgetClient('gmail');
     expect(map.has('antbot:oauth-client:gmail')).toBe(false);
     expect(map.has('antbot:oauth:gmail')).toBe(true);
   });
