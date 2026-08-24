@@ -76,6 +76,13 @@ Errors: `{ error: string, code?: string }` with 4xx/5xx.
 
 - `GET /api/events` (ws) — server pushes `ServerEvent` JSON frames.
   Client may send `{"type":"resume","seq":N}` once on connect to replay missed events.
+
+  The first frame is always `hello`, carrying `seq` and **`epoch`** — an id generated once per
+  daemon process. `seq` restarts at 1 on every boot, so a client that filters on "greater than
+  the last seq I saw" must compare the epoch first: a different one means the numbering is new,
+  and the client resets its filter and refetches (the replay ring is empty at boot, so anything
+  emitted while it was disconnected is not recoverable from the socket). Without this a page
+  open across a daemon restart silently discards every event while still reporting Connected.
 - `GET /api/computer/screencast/:botId` (ws) — **bidirectional.**
 
   Server → client:

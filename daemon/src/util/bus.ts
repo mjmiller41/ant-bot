@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { ServerEvent } from '@antbot/contract';
 
@@ -11,6 +12,12 @@ export class EventBus {
   private seq = 0;
   private ring: ServerEvent[] = [];
   private readonly ringMax = 500;
+  /**
+   * This process's identity, sent in `hello`. seq restarts at 1 on every boot, so without a way
+   * to say "the numbering is new" a client that survived the restart discards every event it is
+   * sent — connected, and permanently blank.
+   */
+  readonly epoch: string = randomUUID();
 
   constructor() {
     this.emitter.setMaxListeners(200);

@@ -46,12 +46,14 @@ function TopBar({
   view,
   onChangeView,
   onOpenPalette,
+  onOpenApproval,
 }: {
   connection: ConnectionState;
   pendingCount: number;
   view: View;
   onChangeView: (v: View) => void;
   onOpenPalette: () => void;
+  onOpenApproval: () => void;
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-(--color-border) bg-(--color-bg-elevated) px-3">
@@ -84,9 +86,16 @@ function TopBar({
           Search… <span className="ml-1 opacity-60">⌘K</span>
         </button>
         {pendingCount > 0 && (
-          <span className="flex items-center gap-1 rounded-full bg-(--color-amber)/15 px-2 py-0.5 text-xs font-medium text-(--color-amber)">
+          // A count with nowhere to click leaves you hunting for the thread the question is in —
+          // and the Rules screen, the obvious guess, is not where an approval is answered.
+          <button
+            type="button"
+            onClick={onOpenApproval}
+            title="Go to the thread waiting on you"
+            className="flex items-center gap-1 rounded-full bg-(--color-amber)/15 px-2 py-0.5 text-xs font-medium text-(--color-amber) hover:bg-(--color-amber)/25"
+          >
             {pendingCount} pending approval{pendingCount === 1 ? '' : 's'}
-          </span>
+          </button>
         )}
         <span className="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
           <span className={clsx('h-1.5 w-1.5 rounded-full', CONNECTION_DOT[connection])} />
@@ -145,16 +154,22 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    const controller = createEventSocket();
+    return () => controller.close();
+  }, []);
+
+  // Refetched on load, and again whenever the daemon reports a new epoch — i.e. it restarted.
+  // Approvals raised before this page loaded arrive over no channel: a fresh load has
+  // lastSeq === -1, so the socket sends no resume frame and the server never replays. Without
+  // this fetch a blocked turn looks resolved in the UI while it is still waiting, and after a
+  // restart the roster and the approval queue would both be whatever they were an hour ago.
+  const daemonEpoch = useStore((s) => s.epoch);
+  useEffect(() => {
     api.bots.list().then(setBots);
     api.threads.list().then(setThreads);
     api.skills.list().then(setSkills);
-    // Approvals raised before this page loaded arrive over no channel: a fresh load has
-    // lastSeq === -1, so the socket sends no resume frame and the server never replays.
-    // Without this fetch a blocked turn looks resolved in the UI while it is still waiting.
     api.approvals.list().then(setPendingApprovals).catch(() => {});
-    const controller = createEventSocket();
-    return () => controller.close();
-  }, [setBots, setThreads, setPendingApprovals]);
+  }, [daemonEpoch, setBots, setThreads, setPendingApprovals]);
 
   // Refetch on thread change, and again whenever the daemon says a transcript changed wholesale
   // — `thread.updated` bumps threadEpoch. Without that second trigger "Start fresh" cleared the
@@ -260,6 +275,10 @@ export default function App() {
           setView(v);
         }}
         onOpenPalette={() => setPaletteOpen(true)}
+        onOpenApproval={() => {
+          const waiting = pendingApprovals[0];
+          if (waiting) handleSelectThread(waiting.threadId);
+        }}
       />
       <div className="flex min-h-0 flex-1">
         <Sidebar

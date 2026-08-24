@@ -85,6 +85,8 @@ function reset() {
     notifications: [],
     secretRequests: [],
     routineRuns: {},
+    epoch: null,
+    threadEpoch: 0,
   });
 }
 
@@ -374,5 +376,62 @@ describe('thread.updated', () => {
     expect(after.threadEpoch).toBe(before + 1);
     // Only the thread named in the event.
     expect(after.messagesByThread.t2).toHaveLength(1);
+  });
+});
+
+describe('useStore — a daemon that restarted', () => {
+  beforeEach(reset);
+
+  const hello = (epoch: string, seq: number): ServerEvent =>
+    ({ type: 'hello', seq, epoch, threadId: null, botId: null }) as ServerEvent;
+
+  // The bug this pins: the daemon's seq restarts at 1 on every boot, so a page that was open
+  // across a restart discarded every event the new process sent — the socket said Connected and
+  // the thread never moved again, including the approval card a blocked turn was waiting on.
+  it('starts counting again when the epoch changes, instead of dropping everything', () => {
+    const h = useStore.getState().handleServerEvent;
+    h(hello('boot-a', 1));
+    h({ type: 'usage.tick', seq: 812, threadId: null, botId: 'bot-1', inputTokens: 1, outputTokens: 1, model: 'x' } as ServerEvent);
+    expect(useStore.getState().lastSeq).toBe(812);
+
+    h(hello('boot-b', 1));
+    expect(useStore.getState().lastSeq).toBe(1);
+
+    const message = makeMessage({ id: 'm-after-restart' });
+    h({ type: 'message.created', seq: 2, threadId: 'thread-1', botId: 'bot-1', message } as ServerEvent);
+    expect(useStore.getState().messagesByThread['thread-1']).toHaveLength(1);
+  });
+
+  // Everything the daemon sent while this page was disconnected is gone: its replay ring is
+  // empty at boot. Dropping the cache is what makes the open view ask for the transcript again.
+  it('drops cached transcripts and bumps threadEpoch so the open view refetches', () => {
+    const h = useStore.getState().handleServerEvent;
+    h(hello('boot-a', 1));
+    useStore.setState({ messagesByThread: { 'thread-1': [makeMessage()] } });
+    const before = useStore.getState().threadEpoch;
+
+    h(hello('boot-b', 1));
+    expect(useStore.getState().messagesByThread).toEqual({});
+    expect(useStore.getState().threadEpoch).toBe(before + 1);
+  });
+
+  // An ordinary reconnect to the same process must keep filtering duplicates, or a replay after
+  // a dropped socket would re-append every message in the ring.
+  it('keeps the filter across a reconnect to the same daemon', () => {
+    const h = useStore.getState().handleServerEvent;
+    h(hello('boot-a', 1));
+    h({ type: 'usage.tick', seq: 40, threadId: null, botId: 'b', inputTokens: 1, outputTokens: 1, model: 'x' } as ServerEvent);
+
+    h(hello('boot-a', 41));
+    expect(useStore.getState().lastSeq).toBe(41);
+    h({ type: 'message.created', seq: 12, threadId: 'thread-1', botId: 'b', message: makeMessage() } as ServerEvent);
+    expect(useStore.getState().messagesByThread['thread-1']).toBeUndefined();
+  });
+
+  it('takes the first epoch it sees without discarding anything', () => {
+    const h = useStore.getState().handleServerEvent;
+    h(hello('boot-a', 7));
+    expect(useStore.getState().epoch).toBe('boot-a');
+    expect(useStore.getState().lastSeq).toBe(7);
   });
 });

@@ -259,6 +259,13 @@ outside it is your machine.
 
 A call that stays inside the workspace is unaffected by this setting at every level.
 
+**One directory outside the workspace counts as inside: `~/.ant-bot/attachments`.** A file there
+got there because the human attached it to the message they were sending, so reading it is not
+the bot reaching onto someone's machine — it is the bot opening what it was handed. Without this,
+attaching a screenshot stopped the turn on an approval for a file you had just chosen yourself.
+The exception is a fixed list (`readableRoots`, wired in `app.ts`), applies to path *containment*
+only — `attachments/../.ssh/id_rsa` resolves outside and is caught — and nothing else is on it.
+
 Reach is detected from `file_path`/`notebook_path` on the file tools, and from absolute,
 `~`/`$HOME`, and dot-relative paths parsed out of `Bash` commands. The Bash parsing is a
 **heuristic and deliberately conservative**: it resolves candidate paths against the workspace and

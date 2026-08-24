@@ -149,3 +149,33 @@ describe('localDecision', () => {
     expect(d.action === 'require' && d.reason).toContain('/etc/passwd');
   });
 });
+
+describe('assessLocalReach with allowed roots', () => {
+  const ws = '/home/u/.ant-bot/workspace';
+  const attachments = '/home/u/.ant-bot/attachments';
+
+  // The stall this pins: you attach an image, the bot is told to read it from
+  // ~/.ant-bot/attachments, that is outside the workspace, and the turn stops on an approval
+  // for a file you just handed over yourself.
+  it('treats an attachment as inside, so reading what the human attached needs no approval', () => {
+    const r = assessLocalReach('Read', { file_path: `${attachments}/1787-image.png` }, ws, [attachments]);
+    expect(r.reaches).toBe(false);
+  });
+
+  it('still catches everything else outside the workspace', () => {
+    expect(assessLocalReach('Read', { file_path: '/home/u/.ssh/id_rsa' }, ws, [attachments]).reaches).toBe(true);
+    expect(assessLocalReach('Read', { file_path: `${attachments}/../../.ssh/id_rsa` }, ws, [attachments]).reaches).toBe(true);
+  });
+
+  it('keeps the workspace itself inside', () => {
+    expect(assessLocalReach('Read', { file_path: `${ws}/notes.md` }, ws, [attachments]).reaches).toBe(false);
+  });
+
+  it('behaves exactly as before when no extra roots are given', () => {
+    expect(assessLocalReach('Read', { file_path: `${attachments}/x.png` }, ws).reaches).toBe(true);
+  });
+
+  it('applies to Bash paths too, not just file tools', () => {
+    expect(assessLocalReach('Bash', { command: `file ${attachments}/x.png` }, ws, [attachments]).reaches).toBe(false);
+  });
+});

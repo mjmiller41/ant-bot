@@ -50,6 +50,11 @@ export interface ManagerDeps {
   removeSkill?: (slug: string) => Promise<{ removed: boolean; name?: string }>;
   browserTools?: (botId: string) => ReturnType<typeof createSdkMcpServer> | undefined;
   /**
+   * Directories a bot may read outside the workspace without a human approval. ant-bot's
+   * attachments directory belongs here: the human attached those files to the message.
+   */
+  readableRoots?: string[];
+  /**
    * MCP connectors assigned to this bot, resolved and ready to mount. Async because mounting
    * reads secrets from the keychain; returns what it could mount plus what to tell the model
    * about, so a connector skipped for a missing credential simply is not there this turn.
@@ -86,7 +91,10 @@ export class BotManager {
     };
     this.queue.push(full);
     this.queue.sort((a, b) => a.priority - b.priority);
-    this.setState(full.botId, 'queued');
+    // Only if nothing is in flight for this bot. A turn waiting on a human approval is
+    // "waiting_approval"; overwriting that with "queued" because a second message arrived is how
+    // a bot asking a question came to look like a stalled queue with no question in it.
+    if (!this.running.has(full.botId)) this.setState(full.botId, 'queued');
     void this.drain();
     return full;
   }
@@ -325,6 +333,9 @@ export class BotManager {
         modelTier: bot.modelTier,
         systemPrompt,
         cwd: workspace,
+        // The attachments directory sits outside cwd, so the SDK would refuse to open a file the
+        // human just attached even after the gateway allowed it.
+        additionalDirectories: this.deps.readableRoots ?? [],
         settings,
         abortController: abort,
         mcpServers,
@@ -341,6 +352,7 @@ export class BotManager {
             botId: bot.id, threadId: job.threadId, toolName, input,
             botDescription: bot.description, settings, signal: abort.signal,
             workspace,
+            allowedRoots: this.deps.readableRoots ?? [],
             // Render the approval inline in the transcript so the human can act on it
             // where the work is happening, not only in a global queue.
             onPending: (approval) => {

@@ -101,6 +101,9 @@ export async function createApp(opts: { root?: string; withAgent?: boolean } = {
   app.manager = new BotManager({
     store, bus, gateway,
     workspace: cfg.paths.workspace,
+    // The human attached these files deliberately; reading one is not "reaching outside the
+    // workspace" in the sense the boundary exists to catch.
+    readableRoots: [cfg.paths.attachments],
     getSettings,
     skillPluginPath: () => app.skillPluginPath,
     installSkill: async (source: string, opts?: { allowMultiple?: boolean }) => {

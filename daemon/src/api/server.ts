@@ -81,7 +81,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
       const unsubscribe = app.bus.subscribe(send);
       // Handshake only — carries the current seq so the client can detect gaps.
       // Deliberately not a `notify`: connection state is UI chrome, not a user alert.
-      send({ type: 'hello', seq: app.bus.currentSeq, threadId: null, botId: null });
+      send({ type: 'hello', seq: app.bus.currentSeq, epoch: app.bus.epoch, threadId: null, botId: null });
 
       socket.on('message', (raw: Buffer) => {
         try {

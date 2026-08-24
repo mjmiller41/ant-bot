@@ -47,6 +47,8 @@ export interface StoreState {
   setThreadMessages: (threadId: string, messages: Message[]) => void;
   /** Bumped when a thread's transcript changes wholesale (today: "Start fresh"). */
   threadEpoch: number;
+  /** The daemon process this client is talking to, from `hello`. Null until the first one. */
+  epoch: string | null;
   /** Optimistically appends/replaces a message outside the seq-ordered event stream
    *  (e.g. the REST response for a message the user just sent). */
   appendLocalMessage: (threadId: string, message: Message) => void;
@@ -90,6 +92,7 @@ export const useStore = create<StoreState>((set, get) => ({
   upsertThread: (thread) => set((s) => ({ threads: { ...s.threads, [thread.id]: thread } })),
 
   threadEpoch: 0,
+  epoch: null,
 
   setThreadMessages: (threadId, messages) =>
     set((s) => ({ messagesByThread: { ...s.messagesByThread, [threadId]: messages } })),
@@ -139,6 +142,22 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   handleServerEvent: (event) => {
+    // `hello` is read before the seq filter, on purpose. The daemon's seq restarts at 1 on every
+    // boot, so after a restart every event it sends looks stale to the filter below — including
+    // this handshake — and the screen goes permanently quiet while the socket reports Connected.
+    // A different epoch means a different process: start counting again, and drop the cached
+    // transcripts so the open view refetches whatever happened while the daemon was away.
+    if (event.type === 'hello') {
+      const known = get().epoch;
+      if (known !== null && known !== event.epoch) {
+        set((s) => ({ epoch: event.epoch, lastSeq: 0, messagesByThread: {}, threadEpoch: s.threadEpoch + 1 }));
+      } else {
+        set({ epoch: event.epoch });
+      }
+      set({ lastSeq: event.seq });
+      return;
+    }
+
     const { lastSeq } = get();
     if (event.seq <= lastSeq) return; // duplicate or stale (out-of-order)
 
@@ -254,11 +273,6 @@ export const useStore = create<StoreState>((set, get) => ({
         set((s) => ({
           secretRequests: [...s.secretRequests, { requestId: event.requestId, name: event.name, reason: event.reason }],
         }));
-        break;
-      }
-      case 'hello': {
-        // Handshake only. Connection state is tracked from the socket lifecycle,
-        // and `lastSeq` is updated below, so there is nothing to reduce here.
         break;
       }
       case 'thread.updated': {

@@ -83,7 +83,7 @@ describe('server events', () => {
   const base = { seq: 1, threadId: 't', botId: 'b' };
   it('parses each event variant', () => {
     const events = [
-      { ...base, type: 'hello' },
+      { ...base, type: 'hello', epoch: 'boot-1' },
       { ...base, type: 'message.created', message: { id: 'm', threadId: 't', authorKind: 'bot', createdAt: 0 } },
       { ...base, type: 'message.delta', messageId: 'm', delta: 'hi' },
       { ...base, type: 'message.done', messageId: 'm', contentMd: 'hi' },
@@ -98,6 +98,9 @@ describe('server events', () => {
 
   it('requires seq on every event', () => {
     expect(ServerEventSchema.safeParse({ type: 'hello', threadId: null, botId: null }).success).toBe(false);
+    // Without an epoch a client cannot tell a restarted daemon from the one it was talking to,
+    // and silently discards everything the new process sends.
+    expect(ServerEventSchema.safeParse({ type: 'hello', seq: 1, threadId: null, botId: null }).success).toBe(false);
   });
 
   it('rejects an unknown event type', () => {

@@ -4,6 +4,28 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-08-24
+
+### Fixed
+
+- **A restarted daemon no longer leaves the page blank.** The event sequence restarts at 1 on
+  every boot, and the UI drops anything at or below the last sequence it saw — so a tab open
+  across a restart silently discarded every event while still showing "Connected". Bots ran,
+  replies were written, approvals were raised, and none of it appeared. `hello` now carries a
+  per-process epoch; a new one resets the filter and refetches the open thread, the roster and
+  the pending approvals.
+- **Attaching a file no longer stops the turn on an approval.** Attachments live in
+  `~/.ant-bot/attachments`, outside the workspace, so reading the image you just attached tripped
+  the local-execution boundary and blocked the turn for fifteen minutes waiting on a permission
+  question about your own file. That directory now counts as inside the boundary — containment is
+  still resolved, so nothing above it is reachable.
+- **"Pending approval" is now a way in.** The count in the top bar was a dead label; clicking it
+  opens the thread that is waiting on you. (Approvals are answered inline in the thread — the
+  Rules screen, the reasonable guess, is not where they appear.)
+- **A bot waiting on you no longer displays as "queued".** Sending a second message while a turn
+  was waiting for an approval overwrote the bot's state, so a question waiting for an answer
+  looked like a stalled queue.
+
 ## [0.4.2] — 2026-08-24
 
 ### Changed

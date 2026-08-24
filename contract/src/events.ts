@@ -5,8 +5,15 @@ import { BotStateSchema, AttentionSchema, CardSchema, MessageSchema, ApprovalSch
 const base = { seq: z.number(), threadId: z.string().nullable(), botId: z.string().nullable() };
 
 export const ServerEventSchema = z.discriminatedUnion('type', [
-  /** Connection handshake. Carries the current seq so a client can detect gaps. */
-  z.object({ ...base, type: z.literal('hello') }),
+  /**
+   * Connection handshake. Carries the current seq so a client can detect gaps, and `epoch` —
+   * an id generated once per daemon process.
+   *
+   * The seq counter restarts at 1 on every boot, so after a restart a client that filters on
+   * "seq greater than the last one I saw" silently drops everything the new process sends while
+   * its socket still reports Connected. A changed epoch is how it knows the numbering is new.
+   */
+  z.object({ ...base, type: z.literal('hello'), epoch: z.string() }),
   z.object({ ...base, type: z.literal('message.created'), message: MessageSchema }),
   z.object({ ...base, type: z.literal('message.delta'), messageId: z.string(), delta: z.string() }),
   z.object({ ...base, type: z.literal('message.done'), messageId: z.string(), contentMd: z.string() }),

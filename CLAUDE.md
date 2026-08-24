@@ -35,8 +35,8 @@ rule fights a deliberate choice here it is disabled *in the config, with the rea
 — `no-explicit-any`, `react-hooks/set-state-in-effect`. Read those comments before turning one
 back on, and prefer a narrow inline disable with a justification over loosening a rule globally.
 
-Baseline as of this checkout: **build clean, typecheck clean, 48 test files / 895 tests passing**
-(contract 34, daemon 614, ui 105, cli 142). The table in `README.md` matches; if you touch it,
+Baseline as of this checkout: **build clean, typecheck clean, 48 test files / 904 tests passing**
+(contract 34, daemon 619, ui 109, cli 142). The table in `README.md` matches; if you touch it,
 recompute rather than copy.
 
 `./antbot` is a launcher that rebuilds whenever any `.ts`/`.tsx`/`.css` under `packages/` is newer
@@ -107,6 +107,12 @@ Daemon internals:
 Every `ServerEvent` carries a monotonic `seq` from `EventBus`; the bus keeps a 500-event ring so a
 reconnecting client can send `{"type":"resume","seq":N}` and get the gap replayed.
 
+**`seq` restarts at 1 on every boot, so `hello` carries `EventBus.epoch`** — a per-process id. The
+UI store reads `hello` *above* its `seq <= lastSeq` filter and, on a changed epoch, resets the
+filter, drops cached transcripts and bumps `threadEpoch` to force a refetch. Without that a page
+open across a daemon restart discards everything the new process sends — connected, and
+permanently blank. Any client-side event handling you add must keep that ordering.
+
 ---
 
 ## Invariants — do not break these
@@ -117,7 +123,9 @@ is load-bearing:
 1. `evaluateRules()` — an enabled `require` rule beats every `allow` rule, always.
 2. Local-execution boundary (`local.ts`) — checked **before** any allow rule takes effect, so a
    broad user `allow` cannot unlock a path outside the workspace. `never` denies, `ask` forces a
-   human, `always` falls through.
+   human, `always` falls through. `assessLocalReach` takes `allowedRoots`: `app.ts` passes
+   `paths.attachments`, because a file the human attached to their own message is not the bot
+   reaching onto their machine. Containment is still resolved, so `attachments/../..` is caught.
 3. Auto-review (Haiku) — advisory, consulted **only** when no `require` rule matched. It can never
    green-light past a `require`.
 4. Fallback is always `askHuman()`. There is no code path where an unrecognized tool defaults to

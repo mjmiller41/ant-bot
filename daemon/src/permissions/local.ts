@@ -31,16 +31,30 @@ export function extractPaths(text: string): string[] {
   return out;
 }
 
-export function assessLocalReach(toolName: string, input: unknown, workspace: string): LocalReach {
+/**
+ * @param allowedRoots Directories that count as inside even though they are not the workspace.
+ *   ant-bot's own attachments directory is one: a file the human attached to the message they
+ *   are sending is theirs, already handed over deliberately, and making the bot ask permission
+ *   to open the image you just gave it stalls the turn on a question with one sensible answer.
+ */
+export function assessLocalReach(
+  toolName: string,
+  input: unknown,
+  workspace: string,
+  allowedRoots: string[] = [],
+): LocalReach {
   const o = (input ?? {}) as Record<string, unknown>;
   const str = (k: string): string => (typeof o[k] === 'string' ? (o[k] as string) : '');
   const ws = path.resolve(workspace);
+  const roots = [ws, ...allowedRoots.map((r) => path.resolve(r))];
 
   const insideWorkspace = (p: string): boolean => {
     if (p.startsWith('~')) return false;
     const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(ws, p);
-    const rel = path.relative(ws, abs);
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    return roots.some((root) => {
+      const rel = path.relative(root, abs);
+      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    });
   };
 
   // File tools carry an explicit path.

@@ -1,7 +1,7 @@
 {
   "name": "ant-bot-workspace",
   "//": "Workspace root, deliberately NOT named \"ant-bot\": `npm i -g .` here would shadow a real `npm i -g ant-bot` with a binary-less symlink to the checkout. The publishable package is assembled into dist-npm/ by `pnpm build:package`.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "type": "module",
   "license": "MIT",

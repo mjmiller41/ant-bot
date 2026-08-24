@@ -87,6 +87,8 @@ export class PermissionGateway {
     signal?: AbortSignal;
     /** Absolute path of the shared workspace, for the local-execution boundary. */
     workspace: string;
+    /** Directories outside the workspace that still count as inside — ant-bot's attachments. */
+    allowedRoots?: string[];
     /** Fired when a human approval card is created, so the caller can render it inline. */
     onPending?: (approval: Approval) => void;
   }): Promise<GatewayDecision> {
@@ -97,7 +99,10 @@ export class PermissionGateway {
     // The local-execution policy is checked before any allow rule: reaching outside
     // the shared workspace means touching the user's own machine, and a broad allow
     // rule must not silently authorize that.
-    const local = localDecision(settings.localExecution, assessLocalReach(toolName, input, args.workspace));
+    const local = localDecision(
+      settings.localExecution,
+      assessLocalReach(toolName, input, args.workspace, args.allowedRoots ?? []),
+    );
     if (local.action === 'deny') {
       return { behavior: 'deny', message: local.reason, via: 'rule' };
     }
