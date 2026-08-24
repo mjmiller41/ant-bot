@@ -90,6 +90,13 @@ describe('describeVerdict', () => {
     expect(describeVerdict('x', { status: 'needs-credential', tools: [], detail: 'missing secret mcp/x/TOKEN' })).toMatch(/missing secret/);
     expect(describeVerdict('x', { status: 'unreachable', tools: [], detail: 'ECONNREFUSED' })).toMatch(/unreachable — ECONNREFUSED/);
   });
+  // Computing the reason and printing only the headline sends you looking for a sign-in you
+  // already did.
+  it('prints why a sign-in is needed when the verdict says', () => {
+    const v = describeVerdict('gmail', { status: 'needs-sign-in', provider: 'Google', tools, detail: 'signed in, but without 3 newer permission(s) — sign in again to grant them' });
+    expect(v).toMatch(/without 3 newer permission/);
+  });
+
   it('names the built-in instead of a sign-in that cannot help', () => {
     const v = describeVerdict('gmail-mcp', { status: 'needs-sign-in', provider: 'accounts.google.com', tools, alternative: 'gmail', detail: 'Use the built-in instead: antbot mcp add gmail' });
     expect(v).toMatch(/✗ gmail-mcp: Use the built-in instead: antbot mcp add gmail/);

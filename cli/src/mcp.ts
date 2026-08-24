@@ -94,9 +94,14 @@ export function describeVerdict(name: string, check: Check): string {
   switch (check.status) {
     case 'ready':
       return green(`✓ ${name}: ready, ${n} tool${n === 1 ? '' : 's'}`);
-    case 'needs-sign-in':
+    case 'needs-sign-in': {
       if (check.alternative) return red(`✗ ${name}: ${check.detail ?? `use the built-in instead: antbot mcp add ${check.alternative}`}`);
-      return yellow(`! ${name}: needs sign-in${check.provider ? ` (${check.provider})` : ''}${n ? `, ${n} tools` : ''}`);
+      // `detail` is the difference between "needs sign-in" and "signed in, but without the
+      // permissions it now asks for" — printing the headline alone sends you looking for a
+      // sign-in you already did.
+      const why = check.detail ?? `needs sign-in${check.provider ? ` (${check.provider})` : ''}`;
+      return yellow(`! ${name}: ${why}${n ? `, ${n} tools` : ''}`);
+    }
     case 'needs-credential':
       return yellow(`! ${name}: ${check.detail ?? 'needs a credential'}`);
     case 'unreachable':

@@ -70,6 +70,11 @@ describe('helpers', () => {
   it('keeps a quoted path in one piece', () => {
     expect(splitCommand('node "/my dir/s.mjs"')).toEqual({ command: 'node', args: ['/my dir/s.mjs'] });
   });
+  it('shows why a sign-in is needed when the verdict explains', () => {
+    const v = verdictText({ status: 'needs-sign-in', provider: 'Google', tools: [], detail: 'signed in, but without 3 newer permission(s)' });
+    expect(v).toEqual({ text: 'signed in, but without 3 newer permission(s)', tone: 'warn' });
+  });
+
   it('names the built-in when a sign-in could not help', () => {
     const v = verdictText({ status: 'needs-sign-in', provider: 'accounts.google.com', tools: [], alternative: 'gmail', detail: 'Use the built-in instead: antbot mcp add gmail' });
     expect(v).toEqual({ text: 'Use the built-in instead: antbot mcp add gmail', tone: 'bad' });

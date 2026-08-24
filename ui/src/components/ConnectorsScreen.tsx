@@ -57,7 +57,9 @@ export function verdictText(check: ConnectorCheck): { text: string; tone: 'ok' |
       return { text: `ready — ${n} tool${n === 1 ? '' : 's'}`, tone: 'ok' };
     case 'needs-sign-in':
       if (check.alternative) return { text: check.detail ?? `use the built-in instead: ${check.alternative}`, tone: 'bad' };
-      return { text: `needs sign-in${check.provider ? ` (${check.provider})` : ''}`, tone: 'warn' };
+      // A stored sign-in that predates the scopes now asked for reads as healthy otherwise; the
+      // detail is the only thing that says to sign in again.
+      return { text: check.detail ?? `needs sign-in${check.provider ? ` (${check.provider})` : ''}`, tone: 'warn' };
     case 'needs-credential':
       return { text: check.detail ?? 'needs a credential', tone: 'warn' };
     case 'unreachable':

@@ -4,6 +4,14 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] — 2026-08-24
+
+### Fixed
+
+- **`check` prints why a sign-in is needed.** 0.4.5 worked out that a token predated the scopes
+  now being asked for, then printed the bare headline `needs sign-in` — sending you to look for a
+  sign-in you had already done. The CLI and the Connectors screen now show the reason.
+
 ## [0.4.5] — 2026-08-24
 
 ### Changed
