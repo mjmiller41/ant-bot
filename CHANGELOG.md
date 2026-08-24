@@ -4,6 +4,16 @@ All notable changes to ant-bot are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] — 2026-08-24
+
+### Changed
+
+- **The thread shows the answer, not the work.** A reply that took a dozen searches used to
+  arrive behind a dozen boxes. Tool calls now fold into one quiet line — `7 steps`, or
+  `Working… search_threads` while a turn is in flight, or `7 steps · 1 failed` — and clicking it
+  opens all of them, in order, exactly as before. Approvals, sign-in prompts, errors and files
+  still render in full: those are things to act on, not steps to scroll past.
+
 ## [0.4.3] — 2026-08-24
 
 ### Fixed

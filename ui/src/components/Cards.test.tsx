@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { Card, Approval, RosterEntry } from '@antbot/contract';
-import { CardView, describeResult } from './Cards.js';
+import { CardView, CardList, describeResult } from './Cards.js';
 import { useStore } from '../store/useStore.js';
 
 function makeApproval(overrides: Partial<Approval> = {}): Approval {
@@ -138,5 +138,41 @@ describe('describeResult', () => {
   // A truncated or malformed blob must not be announced as structured data.
   it('does not claim JSON it could not parse', () => {
     expect(describeResult('{"threads": [').json).toBe(false);
+  });
+});
+
+describe('CardList — the work is folded away, the answer is not', () => {
+  const tool = (over: Partial<Extract<Card, { type: 'tool' }>> = {}): Card =>
+    ({ type: 'tool', toolName: 'Read', summary: 'a.txt', status: 'ok', ...over }) as Card;
+
+  it('shows one line for a message full of tool calls, not a box each', () => {
+    render(<CardList cards={[tool(), tool(), tool()]} />);
+    expect(screen.getByText('3 steps')).toBeInTheDocument();
+    // Rendered, but inside a closed <details>: nothing between you and the reply.
+    expect(screen.getByText('3 steps').closest('details')).not.toHaveAttribute('open');
+  });
+
+  it('names what is running so a long turn shows progress', () => {
+    render(<CardList cards={[tool(), tool({ toolName: 'mcp__gmail__search_threads', status: 'running' })]} />);
+    expect(screen.getByText('Working… search_threads')).toBeInTheDocument();
+  });
+
+  it('says when a step failed rather than hiding it completely', () => {
+    render(<CardList cards={[tool(), tool({ status: 'error' })]} />);
+    expect(screen.getByText('2 steps · 1 failed')).toBeInTheDocument();
+  });
+
+  // An approval blocks the turn and an error is the reason there is no answer: folding those
+  // away would hide the thing the person has to act on.
+  it('leaves everything actionable in full view', () => {
+    render(<CardList cards={[tool(), { type: 'error', message: 'it broke' } as Card]} />);
+    expect(screen.getByText('it broke')).toBeInTheDocument();
+    expect(screen.getByText('1 step')).toBeInTheDocument();
+  });
+
+  it('folds every step into a single line, wherever they appear', () => {
+    render(<CardList cards={[tool(), { type: 'error', message: 'x' } as Card, tool()]} />);
+    expect(screen.getAllByText(/step/)).toHaveLength(1);
+    expect(screen.getByText('2 steps')).toBeInTheDocument();
   });
 });

@@ -419,19 +419,25 @@ each** (200 MB for video). Uploads over the limit are rejected by the server wit
 
 ### Reading a reply
 
-Replies stream in token by token. As the Bot works, cards appear inline beneath the text:
+Replies stream in token by token. The reply itself is what the thread shows; the work behind it
+folds into one line beneath it:
 
-- **Tool cards** show the tool name, a one-line summary, a status chip (`running`, `ok`, `error`,
-  `denied`), the output, and a collapsible **Raw input** section with the exact JSON.
+- **The steps line** reads `7 steps` when the turn is done, `Working… search_threads` while it is
+  running, or `7 steps · 1 failed` when something went wrong. Click it to open every tool call in
+  order — tool name, a one-line summary of the arguments, a status chip (`running`, `ok`, `error`,
+  `denied`), the output, and a collapsible **Raw input** with the exact JSON.
+- **Tool results that are structured data** collapse further, to `Result — 50 threads · 82.1 KB`.
+  Plain text output stays visible, because that is usually the thing you wanted to see.
+- **Approval cards** are the inline approve/deny prompt, and never fold away.
+- **Sign-in cards** appear when a connector's token expired mid-turn, with a button to fix it.
+- **Error cards** show failures, and **handoff cards** show work passing between Bots. Neither
+  folds away either.
 - **File cards** would show a file the Bot created or modified, with a **Download** button — the
   renderer exists but **the server never emits this card type**, so you will not see one in
   practice. Find files a Bot produced in the Workspace tab instead.
-- **Approval cards** are the inline approve/deny prompt.
-- **Handoff cards** show work passing from one Bot to another.
-- **Error cards** show failures.
 
-The **Raw input** disclosure on tool and approval cards is deliberate: you can always see the exact
-arguments a Bot proposed, not just a friendly paraphrase.
+Nothing is hidden, only folded: the **Raw input** disclosure is still there under every step, so
+you can always see the exact arguments a Bot proposed rather than a friendly paraphrase.
 
 ### Group threads
 

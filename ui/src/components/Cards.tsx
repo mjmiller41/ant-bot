@@ -210,16 +210,64 @@ export function CardView({ card }: { card: Card }) {
   }
 }
 
+/**
+ * How a bot's tool calls got there, in one line.
+ *
+ * A reply worth reading arrives after a dozen searches and fetches, and a box per call pushes the
+ * answer off the screen — the work is not the point, the answer is. Everything a person must act
+ * on (an approval, a sign-in, an error, a file) still renders in full; only the steps fold away,
+ * and clicking opens all of them, in order, exactly as before.
+ */
+export function ActivitySummary({ cards }: { cards: Extract<Card, { type: 'tool' }>[] }) {
+  const running = cards.some((c) => c.status === 'running');
+  const failed = cards.filter((c) => c.status === 'error' || c.status === 'denied').length;
+  const label = running
+    ? `Working… ${describeStep(cards[cards.length - 1])}`
+    : `${cards.length} step${cards.length === 1 ? '' : 's'}${failed ? ` · ${failed} failed` : ''}`;
+
+  return (
+    <details className="text-xs">
+      <summary
+        className={`cursor-pointer select-none ${failed && !running ? 'text-(--color-amber)' : 'text-(--color-text-muted)'}`}
+      >
+        {label}
+      </summary>
+      <div className="mt-2 flex flex-col gap-2">
+        {cards.map((card, i) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <ToolCard key={i} card={card} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/** The tool being run right now, named — so a long turn shows progress rather than a spinner. */
+function describeStep(card: Extract<Card, { type: 'tool' }> | undefined): string {
+  if (!card) return '';
+  const mcp = /^mcp__[^_]+(?:_[^_]+)*__(.+)$/.exec(card.toolName);
+  return mcp ? mcp[1]! : card.toolName;
+}
+
 export function CardList({ cards }: { cards: Card[] }) {
   if (cards.length === 0) return null;
+
+  // Tool calls fold into one line, placed where the first of them appeared so the order of
+  // everything else is untouched.
+  const steps = cards.filter((c): c is Extract<Card, { type: 'tool' }> => c.type === 'tool');
+  const firstStep = cards.findIndex((c) => c.type === 'tool');
+
   return (
     <div className="mt-2 flex flex-col gap-2">
-      {cards.map((card, i) => (
+      {cards.map((card, i) => {
+        if (card.type === 'tool') {
+          return i === firstStep ? <ActivitySummary key="steps" cards={steps} /> : null;
+        }
         // Cards are append-only and the server addresses updates by position
         // (`message.card` carries `cardIndex`), so the index IS the stable identity.
         // eslint-disable-next-line react/no-array-index-key
-        <CardView key={i} card={card} />
-      ))}
+        return <CardView key={i} card={card} />;
+      })}
     </div>
   );
 }
